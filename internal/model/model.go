@@ -107,7 +107,7 @@ type Media struct {
 	UploaderID uint      `gorm:"not null;index" json:"uploader_id"`
 	FileName   string    `gorm:"type:varchar(255);not null" json:"file_name"`
 	FilePath   string    `gorm:"type:varchar(255);not null" json:"file_path"`
-	FileHash   string    `gorm:"type:varchar(64);index" json:"file_hash"`
+	FileHash   string    `gorm:"type:varchar(255);index" json:"file_hash"`
 	MimeType   string    `gorm:"type:varchar(100);not null" json:"mime_type"`
 	Size       int64     `gorm:"not null" json:"size"` // 文件大小（字节）
 	CreatedAt  time.Time `gorm:"not null;autoCreateTime" json:"created_at"`

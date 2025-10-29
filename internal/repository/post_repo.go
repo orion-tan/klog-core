@@ -122,14 +122,32 @@ func (r *PostRepository) GetPosts(page, limit int, status, categorySlug, tagSlug
 		return nil, 0, err
 	}
 
-	// 排序
-	if sortBy == "" {
-		sortBy = "published_at"
+	// 排序 - 使用白名单防止 SQL 注入
+	allowedSortFields := map[string]string{
+		"published_at": "published_at",
+		"created_at":   "created_at",
+		"updated_at":   "updated_at",
+		"view_count":   "view_count",
+		"title":        "title",
 	}
-	if order == "" {
-		order = "desc"
+	allowedOrders := map[string]string{
+		"asc":  "ASC",
+		"desc": "DESC",
 	}
-	query = query.Order(sortBy + " " + order)
+
+	// 验证并设置排序字段
+	sortField, ok := allowedSortFields[sortBy]
+	if !ok {
+		sortField = "published_at"
+	}
+
+	// 验证并设置排序方向
+	sortOrder, ok := allowedOrders[order]
+	if !ok {
+		sortOrder = "DESC"
+	}
+
+	query = query.Order(sortField + " " + sortOrder)
 
 	// 分页
 	offset := (page - 1) * limit

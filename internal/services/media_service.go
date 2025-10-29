@@ -2,7 +2,7 @@ package services
 
 import (
 	"bytes"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,10 +10,13 @@ import (
 	"klog-backend/internal/config"
 	"klog-backend/internal/model"
 	"klog-backend/internal/repository"
+	"klog-backend/internal/utils"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -46,7 +49,8 @@ var AllowedExtensions = map[string]bool{
 // FileData 文件数据传输对象
 type FileData struct {
 	FileName  string
-	FileBytes []byte
+	FileBytes []byte    // 用于小文件或base64上传
+	Reader    io.Reader // 用于流式上传（大文件）
 	MimeType  string
 	Size      int64
 }
@@ -69,35 +73,31 @@ func (s *MediaService) SaveMediaFile(fileData *FileData, uploaderID uint) (*mode
 		return nil, err
 	}
 
-	// 2. 计算文件哈希
-	fileHash, err := s.calculateFileHash(fileData.FileBytes)
-	if err != nil {
-		return nil, fmt.Errorf("计算文件哈希失败: %v", err)
-	}
-
-	// 3. 检查文件是否已存在（去重）
-	existingMedia, err := s.mediaRepo.GetMediaByHash(fileHash)
-	if err == nil && existingMedia != nil {
-		// 文件已存在，直接返回
-		return existingMedia, nil
-	}
-
-	// 4. 生成唯一文件名
+	// 2. 生成唯一文件名
 	fileName := s.generateFileName(uploaderID, fileData.FileName)
 
-	// 5. 确保上传目录存在
+	// 3. 确保上传目录存在
 	uploadDir := config.Cfg.Media.MediaDir
 	if err := s.ensureUploadDir(uploadDir); err != nil {
 		return nil, err
 	}
 
-	// 6. 保存物理文件
+	// 4. 保存物理文件（流式处理）
 	filePath := filepath.Join(uploadDir, fileName)
-	if err := s.saveFile(filePath, fileData.FileBytes); err != nil {
+	fileHash, err := s.saveFileStream(filePath, fileData)
+	if err != nil {
 		return nil, err
 	}
 
-	// 7. 创建数据库记录
+	// 5. 检查文件是否已存在（去重）
+	existingMedia, err := s.mediaRepo.GetMediaByHash(fileHash)
+	if err == nil && existingMedia != nil {
+		// 文件已存在，删除刚保存的文件，返回已存在的记录
+		_ = os.Remove(filePath)
+		return existingMedia, nil
+	}
+
+	// 6. 创建数据库记录
 	media := &model.Media{
 		UploaderID: uploaderID,
 		FileName:   fileData.FileName,
@@ -132,32 +132,94 @@ func (s *MediaService) validateFile(fileData *FileData) error {
 		return fmt.Errorf("%w: %s", ErrInvalidFileType, ext)
 	}
 
-	// 检查MIME类型
+	// 检查客户端提供的 MIME 类型
 	if !AllowedMimeTypes[fileData.MimeType] {
 		return fmt.Errorf("%w: %s", ErrInvalidFileType, fileData.MimeType)
+	}
+
+	// 二次验证：检测文件实际内容的 MIME 类型（防止伪造）
+	detectedMimeType := s.detectMimeType(fileData.FileBytes)
+	if !AllowedMimeTypes[detectedMimeType] {
+		return fmt.Errorf("%w: 检测到的文件类型为 %s，不允许上传", ErrInvalidFileType, detectedMimeType)
 	}
 
 	return nil
 }
 
-// calculateFileHash 计算文件哈希值
+// detectMimeType 检测文件实际的 MIME 类型
+// @fileBytes 文件字节流
+// @return MIME 类型
+func (s *MediaService) detectMimeType(fileBytes []byte) string {
+	// 使用标准库检测文件类型（基于文件头魔数）
+	// 最多读取前 512 字节
+	if len(fileBytes) > 512 {
+		return detectContentType(fileBytes[:512])
+	}
+	return detectContentType(fileBytes)
+}
+
+// detectContentType 辅助函数：检测内容类型
+// @data 文件数据
+// @return MIME 类型
+func detectContentType(data []byte) string {
+	// 检查常见图片格式的魔数
+	if len(data) >= 2 {
+		// JPEG: FF D8 FF
+		if data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+			return "image/jpeg"
+		}
+		// PNG: 89 50 4E 47
+		if len(data) >= 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
+			return "image/png"
+		}
+		// GIF: 47 49 46
+		if len(data) >= 3 && data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 {
+			return "image/gif"
+		}
+		// WebP: 52 49 46 46 ... 57 45 42 50
+		if len(data) >= 12 && data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+			data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50 {
+			return "image/webp"
+		}
+	}
+
+	// SVG 是 XML 格式，检查文本内容
+	if len(data) >= 5 {
+		content := string(data[:min(len(data), 1024)])
+		if strings.Contains(content, "<svg") || strings.Contains(content, "<?xml") {
+			return "image/svg+xml"
+		}
+	}
+
+	return "application/octet-stream"
+}
+
+// min 辅助函数：返回两个整数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// calculateFileHash 计算文件哈希值（使用 SHA-256）
 // @fileBytes 文件字节流
 // @return 文件哈希, 错误
 func (s *MediaService) calculateFileHash(fileBytes []byte) (string, error) {
-	hash := md5.New()
+	hash := sha256.New()
 	if _, err := io.Copy(hash, bytes.NewReader(fileBytes)); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// generateFileName 生成安全的文件名
+// generateFileName 生成安全的文件名（使用 SHA-256）
 // @uploaderID 上传者ID
 // @originalName 原始文件名
 // @return 生成的文件名
 func (s *MediaService) generateFileName(uploaderID uint, originalName string) string {
 	ext := strings.ToLower(filepath.Ext(originalName))
-	hash := md5.Sum([]byte(fmt.Sprintf("%d-%d-%s", uploaderID, time.Now().UnixNano(), originalName)))
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%d-%d-%s", uploaderID, time.Now().UnixNano(), originalName)))
 	return hex.EncodeToString(hash[:]) + ext
 }
 
@@ -171,7 +233,7 @@ func (s *MediaService) ensureUploadDir(dir string) error {
 	return nil
 }
 
-// saveFile 保存文件到磁盘
+// saveFile 保存文件到磁盘（小文件）
 // @filePath 文件路径
 // @fileBytes 文件字节流
 // @return 错误
@@ -182,13 +244,64 @@ func (s *MediaService) saveFile(filePath string, fileBytes []byte) error {
 	return nil
 }
 
+// saveFileStream 流式保存文件到磁盘（支持大文件）
+// @filePath 文件路径
+// @fileData 文件数据
+// @return 文件哈希, 错误
+func (s *MediaService) saveFileStream(filePath string, fileData *FileData) (string, error) {
+	// 创建目标文件
+	dst, err := os.Create(filePath)
+	if err != nil {
+		return "", fmt.Errorf("创建文件失败: %v", err)
+	}
+	defer dst.Close()
+
+	// 创建哈希计算器
+	hash := sha256.New()
+
+	// 使用 MultiWriter 同时写入文件和计算哈希
+	writer := io.MultiWriter(dst, hash)
+
+	var written int64
+
+	// 根据数据来源选择处理方式
+	if fileData.Reader != nil {
+		// 流式上传（适合大文件）
+		written, err = io.Copy(writer, fileData.Reader)
+	} else if fileData.FileBytes != nil {
+		// 字节数组上传（适合小文件或base64）
+		written, err = io.Copy(writer, bytes.NewReader(fileData.FileBytes))
+	} else {
+		return "", errors.New("无效的文件数据：既没有Reader也没有FileBytes")
+	}
+
+	if err != nil {
+		_ = os.Remove(filePath)
+		return "", fmt.Errorf("保存文件失败: %v", err)
+	}
+
+	// 验证写入的大小
+	if written != fileData.Size {
+		_ = os.Remove(filePath)
+		return "", fmt.Errorf("文件大小不匹配：期望%d字节，实际写入%d字节", fileData.Size, written)
+	}
+
+	// 返回文件哈希
+	fileHash := hex.EncodeToString(hash.Sum(nil))
+	return fileHash, nil
+}
+
 // GetMediaByID 根据ID获取媒体文件
 // @mediaID 媒体文件ID
 // @return 媒体文件, 错误
 func (s *MediaService) GetMediaByID(mediaID uint) (*model.Media, error) {
 	media, err := s.mediaRepo.GetMediaByID(mediaID)
 	if err != nil {
-		return nil, ErrMediaNotFound
+		// 精确判断错误类型
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrMediaNotFound
+		}
+		return nil, fmt.Errorf("查询媒体文件失败: %w", err)
 	}
 	return media, nil
 }
@@ -209,7 +322,11 @@ func (s *MediaService) GetMediaList(page, limit int) ([]model.Media, int64, erro
 func (s *MediaService) CheckDeletePermission(mediaID uint, userID uint, role string) error {
 	media, err := s.mediaRepo.GetMediaByID(mediaID)
 	if err != nil {
-		return ErrMediaNotFound
+		// 精确判断错误类型
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrMediaNotFound
+		}
+		return fmt.Errorf("查询媒体文件失败: %w", err)
 	}
 
 	// 只有上传者本人或管理员可以删除
@@ -227,20 +344,28 @@ func (s *MediaService) DeleteMediaWithFile(mediaID uint) error {
 	// 获取媒体信息
 	media, err := s.mediaRepo.GetMediaByID(mediaID)
 	if err != nil {
-		return ErrMediaNotFound
+		// 精确判断错误类型
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrMediaNotFound
+		}
+		return fmt.Errorf("查询媒体文件失败: %w", err)
 	}
 
-	// 先删除数据库记录
-	if err := s.mediaRepo.DeleteMedia(mediaID); err != nil {
-		return fmt.Errorf("删除数据库记录失败: %v", err)
-	}
-
-	// 再删除物理文件（即使失败也不影响数据库操作）
+	// 先删除物理文件
 	filePath := filepath.Join(config.Cfg.Media.MediaDir, media.FilePath)
 	if err := os.Remove(filePath); err != nil {
-		// 记录日志但不返回错误，因为数据库记录已删除
-		// TODO: 添加日志记录
-		// log.Printf("删除物理文件失败: %v", err)
+		// 如果文件不存在，只记录警告，继续删除数据库记录
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("删除物理文件失败: %v", err)
+		}
+		utils.SugarLogger.Warnf("物理文件不存在，仅删除数据库记录: %s", filePath)
+	}
+
+	// 再删除数据库记录
+	if err := s.mediaRepo.DeleteMedia(mediaID); err != nil {
+		// 物理文件已删除但数据库删除失败，记录错误但不能回滚文件删除
+		utils.SugarLogger.Errorf("删除数据库记录失败（物理文件已删除）: %v", err)
+		return fmt.Errorf("删除数据库记录失败: %v", err)
 	}
 
 	return nil

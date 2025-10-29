@@ -25,8 +25,16 @@ func NewMediaHandler(mediaService *services.MediaService) *MediaHandler {
 
 // UploadMedia 上传媒体文件
 func (h *MediaHandler) UploadMedia(c *gin.Context) {
-	claims, _ := c.Get("claims")
-	klogClaims := claims.(*utils.KLogClaims)
+	claims, exists := c.Get("claims")
+	if !exists {
+		utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "未找到用户认证信息")
+		return
+	}
+	klogClaims, ok := claims.(*utils.KLogClaims)
+	if !ok {
+		utils.ResponseError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "用户信息类型错误")
+		return
+	}
 
 	contentType := c.ContentType()
 
@@ -55,9 +63,14 @@ func (h *MediaHandler) UploadMedia(c *gin.Context) {
 	// 交给Service层处理
 	media, err := h.mediaService.SaveMediaFile(fileData, klogClaims.UserID)
 	if err != nil {
+		// 记录上传失败的审计日志
+		utils.LogFileOperation(c, "upload_file", "", fileData.FileName, false)
 		utils.ResponseError(c, http.StatusInternalServerError, "UPLOAD_FAILED", err.Error())
 		return
 	}
+
+	// 记录上传成功的审计日志
+	utils.LogFileOperation(c, "upload_file", fmt.Sprintf("%d", media.ID), media.FileName, true)
 
 	// 格式化响应
 	response := map[string]interface{}{
@@ -65,7 +78,7 @@ func (h *MediaHandler) UploadMedia(c *gin.Context) {
 		"file_name":  media.FileName,
 		"file_path":  media.FilePath,
 		"file_hash":  media.FileHash,
-		"url":        "/medias/" + media.FilePath,
+		"url":        "/media/i/" + media.FilePath,
 		"mime_type":  media.MimeType,
 		"size":       media.Size,
 		"created_at": media.CreatedAt,
@@ -74,7 +87,7 @@ func (h *MediaHandler) UploadMedia(c *gin.Context) {
 	utils.ResponseSuccess(c, http.StatusCreated, response)
 }
 
-// extractMultipartFile 从multipart请求中提取文件数据
+// extractMultipartFile 从multipart请求中提取文件数据（流式处理）
 // @c Gin上下文
 // @return 文件数据, 错误
 func (h *MediaHandler) extractMultipartFile(c *gin.Context) (*services.FileData, error) {
@@ -83,15 +96,29 @@ func (h *MediaHandler) extractMultipartFile(c *gin.Context) (*services.FileData,
 		return nil, fmt.Errorf("获取上传文件失败: %v", err)
 	}
 
-	// 打开文件获取字节流
+	// 打开文件获取Reader
 	file, err := fileHeader.Open()
 	if err != nil {
 		return nil, fmt.Errorf("打开文件失败: %v", err)
 	}
-	defer file.Close()
+	// 注意：不要在这里关闭文件，让Service层处理完后再关闭
 
-	// 读取文件内容
+	// 对于大文件（>1MB），使用流式处理
+	const largeFileThreshold = 1 * 1024 * 1024
+
+	if fileHeader.Size > largeFileThreshold {
+		// 大文件：使用Reader流式处理
+		return &services.FileData{
+			FileName: fileHeader.Filename,
+			Reader:   file, // 使用流式读取
+			MimeType: fileHeader.Header.Get("Content-Type"),
+			Size:     fileHeader.Size,
+		}, nil
+	}
+
+	// 小文件：读取到内存中（用于MIME类型验证）
 	fileBytes, err := io.ReadAll(file)
+	file.Close()
 	if err != nil {
 		return nil, fmt.Errorf("读取文件内容失败: %v", err)
 	}
@@ -161,8 +188,16 @@ func (h *MediaHandler) GetMediaList(c *gin.Context) {
 
 // DeleteMedia 删除媒体文件
 func (h *MediaHandler) DeleteMedia(c *gin.Context) {
-	claims, _ := c.Get("claims")
-	klogClaims := claims.(*utils.KLogClaims)
+	claims, exists := c.Get("claims")
+	if !exists {
+		utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "未找到用户认证信息")
+		return
+	}
+	klogClaims, ok := claims.(*utils.KLogClaims)
+	if !ok {
+		utils.ResponseError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "用户信息类型错误")
+		return
+	}
 
 	// 解析和验证ID
 	idStr := c.Param("id")
@@ -174,11 +209,12 @@ func (h *MediaHandler) DeleteMedia(c *gin.Context) {
 
 	// 权限检查（在Service层获取media信息）
 	if err := h.mediaService.CheckDeletePermission(uint(id), klogClaims.UserID, klogClaims.Role); err != nil {
-		if err == services.ErrMediaNotFound {
+		switch err {
+		case services.ErrMediaNotFound:
 			utils.ResponseError(c, http.StatusNotFound, "MEDIA_NOT_FOUND", "媒体文件不存在")
-		} else if err == services.ErrPermissionDenied {
+		case services.ErrPermissionDenied:
 			utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权删除此媒体文件")
-		} else {
+		default:
 			utils.ResponseError(c, http.StatusInternalServerError, "CHECK_PERMISSION_FAILED", err.Error())
 		}
 		return
@@ -186,9 +222,14 @@ func (h *MediaHandler) DeleteMedia(c *gin.Context) {
 
 	// 删除媒体文件（包括物理文件和数据库记录）
 	if err := h.mediaService.DeleteMediaWithFile(uint(id)); err != nil {
+		// 记录删除失败的审计日志
+		utils.LogFileOperation(c, "delete_file", idStr, "", false)
 		utils.ResponseError(c, http.StatusInternalServerError, "DELETE_MEDIA_FAILED", err.Error())
 		return
 	}
+
+	// 记录删除成功的审计日志
+	utils.LogFileOperation(c, "delete_file", idStr, "", true)
 
 	c.Status(http.StatusNoContent)
 }
@@ -204,7 +245,7 @@ func (h *MediaHandler) ServeMedia(c *gin.Context) {
 		return
 	}
 
-	// 通过Service层获取文件路径（包含安全检查）
+	// 通过Service层获取文件路径
 	filePath, err := h.mediaService.GetMediaFilePath(fileName)
 	if err != nil {
 		if err == services.ErrMediaNotFound {

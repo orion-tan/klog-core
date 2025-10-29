@@ -31,6 +31,14 @@ func JWTAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
+		// 检查用户状态是否为活跃
+		if claims.Status != "active" {
+			utils.ResponseError(c, http.StatusForbidden, "ACCOUNT_INACTIVE", "账号已被禁用")
+			c.Abort()
+			return
+		}
+
 		c.Set("claims", claims)
 		c.Next()
 	}

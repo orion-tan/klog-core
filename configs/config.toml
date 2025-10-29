@@ -1,5 +1,6 @@
 [server]
 port = 8010
+cors = ["localhost"]
 
 [logger]
 level = "info"
@@ -18,5 +19,5 @@ addr = ""
 password = ""
 
 [jwt]
-secret = "your-very-secret-key"
+secret = "ahsucjshzgsfshaysudkxhsuzksgdoqlschu"
 expire_hour = 72

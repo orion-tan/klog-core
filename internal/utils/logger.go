@@ -14,13 +14,14 @@ import (
 var Logger *zap.Logger
 var SugarLogger *zap.SugaredLogger
 
-
 func InitLogger() {
 	encoder := getEncoder()
 	writer := getLogWriter()
 	core := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(writer, zapcore.AddSync(os.Stdout)), getLogLevel())
 	Logger = zap.New(core, zap.AddCaller())
 	SugarLogger = Logger.Sugar()
+	defer Logger.Sync()
+	defer SugarLogger.Sync()
 }
 
 func getEncoder() zapcore.Encoder {
@@ -32,12 +33,12 @@ func getEncoder() zapcore.Encoder {
 }
 
 func getLogWriter() zapcore.WriteSyncer {
-	
+
 	writer := &timberjack.Logger{
-		Filename:   config.Cfg.Logger.Path,
-		MaxSize:    config.Cfg.Logger.MaxSize,
-		MaxBackups: config.Cfg.Logger.MaxBackups,
-		MaxAge:     config.Cfg.Logger.MaxAge,
+		Filename:    config.Cfg.Logger.Path,
+		MaxSize:     config.Cfg.Logger.MaxSize,
+		MaxBackups:  config.Cfg.Logger.MaxBackups,
+		MaxAge:      config.Cfg.Logger.MaxAge,
 		Compression: "none",
 	}
 	return zapcore.AddSync(writer)

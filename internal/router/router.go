@@ -16,13 +16,26 @@ type RouterHandlers struct {
 	CommentHandler  *handler.CommentHandler
 	MediaHandler    *handler.MediaHandler
 	UserHandler     *handler.UserHandler
+	HealthHandler   *handler.HealthHandler
 }
 
 func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 	router := gin.Default()
 
-	// 静态文件服务（上传的文件）
-	router.GET("/uploads/:filename", handlers.MediaHandler.ServeMedia)
+	// 全局中间件：CORS跨域支持
+	router.Use(middleware.CORSMiddleware())
+
+	// 健康检查和监控端点（不需要认证和限流）
+	router.GET("/health", handlers.HealthHandler.HealthCheck)
+	router.GET("/health/ready", handlers.HealthHandler.ReadyCheck)
+	router.GET("/health/live", handlers.HealthHandler.LiveCheck)
+	router.GET("/metrics", handlers.HealthHandler.Metrics)
+
+	// 全局中间件：请求体大小限制（30MB）
+	router.Use(middleware.RequestSizeLimit(30 * 1024 * 1024))
+
+	// 全局中间件：限流
+	router.Use(middleware.RateLimitMiddleware())
 
 	// api/v1 路由组
 	apiV1 := router.Group("/api/v1")
@@ -46,7 +59,7 @@ func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 
 			// 文章评论（使用相同的参数名 :id）
 			posts.GET("/:id/comments", handlers.CommentHandler.GetCommentsByPostID)
-			posts.POST("/:id/comments", middleware.JWTAuthOptional(), handlers.CommentHandler.CreateComment)
+			posts.POST("/:id/comments", middleware.JWTAuthOptional(), middleware.CommentRateLimitMiddleware(), handlers.CommentHandler.CreateComment)
 		}
 
 		// 分类路由
@@ -77,6 +90,9 @@ func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 		// 媒体库路由
 		media := apiV1.Group("/media")
 		{
+			// 静态文件服务（上传的文件）
+			media.GET("/i/:filename", handlers.MediaHandler.ServeMedia)
+			// 文件上传
 			media.POST("/upload", middleware.JWTAuth(), handlers.MediaHandler.UploadMedia)
 			media.GET("", middleware.JWTAuth(), handlers.MediaHandler.GetMediaList)
 			media.DELETE("/:id", middleware.JWTAuth(), handlers.MediaHandler.DeleteMedia)

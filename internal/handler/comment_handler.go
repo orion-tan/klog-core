@@ -37,8 +37,33 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 	var userID *uint
 	claims, exists := c.Get("claims")
 	if exists {
-		klogClaims := claims.(*utils.KLogClaims)
-		userID = &klogClaims.UserID
+		if klogClaims, ok := claims.(*utils.KLogClaims); ok {
+			userID = &klogClaims.UserID
+		}
+	}
+
+	// 游客评论验证
+	if userID == nil {
+		// 游客必须提供姓名和邮箱
+		if req.Name == "" {
+			utils.ResponseError(c, http.StatusBadRequest, "INVALID_PARAMS", "游客评论必须提供姓名")
+			return
+		}
+		if req.Email == "" {
+			utils.ResponseError(c, http.StatusBadRequest, "INVALID_PARAMS", "游客评论必须提供邮箱")
+			return
+		}
+		// 验证姓名长度
+		if len(req.Name) < 2 || len(req.Name) > 50 {
+			utils.ResponseError(c, http.StatusBadRequest, "INVALID_PARAMS", "姓名长度应在2-50个字符之间")
+			return
+		}
+	}
+
+	// 验证评论内容长度
+	if len(req.Content) < 1 || len(req.Content) > 1000 {
+		utils.ResponseError(c, http.StatusBadRequest, "INVALID_PARAMS", "评论内容长度应在1-1000个字符之间")
+		return
 	}
 
 	// 获取IP地址
@@ -111,4 +136,3 @@ func (h *CommentHandler) DeleteComment(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
-

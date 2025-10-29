@@ -47,9 +47,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	token, _, err := h.authService.Login(&req)
 	if err != nil {
+		// 记录登录失败的审计日志
+		utils.LogLogin(c, req.Login, false)
 		utils.ResponseError(c, http.StatusUnauthorized, "LOGIN_FAILED", err.Error())
 		return
 	}
+	// 记录登录成功的审计日志
+	utils.LogLogin(c, req.Login, true)
 	utils.ResponseSuccess(c, http.StatusOK, api.UserLoginResponse{
 		Token: token,
 	})
