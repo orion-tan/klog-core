@@ -1,0 +1,294 @@
+数据库表设计
+6个核心表
+1. 用户表 (users)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+username	VARCHAR(50)	Unique、Not Null；用户名，用于登录
+pasword	VARCHAR(255)	Not Null；用户密码，存储哈希后密码
+email	VARCHAR(100)	Unique、Not Null；用于找回密码、通知和登录
+nickname	VARCHAR(50)	Not Null；公开显示的昵称
+avatar_url	VARCHAR(255)	NULL；用户头像地址，可为空
+role	VARCHAR(20)	Not Null；用户角色，默认 'author' （'author'、'admin'）
+status	VARCHAR(20)	Not Null；用户状态，默认'active' （'active'、'inactive'）
+created_at	TIMESTAMP	Not Null；创建时间，默认当前时间
+updated_at	TIMESTAMP	Not Null；更新时间，默认当前时间
+2. 文章表 (posts)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+category_id	INT / BIGINT	外键（Foreign Key）-> categories(id)；外键关联文章分类
+author_id	INT / BIGINT	Not Null、外键（Foreign Key）-> users(id)；外键关联作者
+title	VARCHAR(255)	Not Null；文章标题
+slug	VARCHAR(255)	Unique、Not Null；URL友好的别名，可用于URL访问链接
+content	LONGTEXT	Not Null；文章正文，存储大量文本（Markdown格式）
+excerpt	TEXT	NULL；文章摘要，可用于文章列表显示文章主要内容信息
+cover_image_url	VARCHAR(255)	NULL；文章封面图片地址
+status	VARCHAR(20)	Not Null；文章状态，默认 'draft' （'draft'、'published'、'archived'）
+view_count	BIGINT	Not Null；文章访问量，默认0
+published_at	TIMESTAMP	NULL；文章发布时间，status == 'published' 时才有效
+created_at	TIMESTAMP	Not Null；创建时间，默认当前时间
+updated_at	TIMESTAMP	Not Null；更新时间，默认当前时间
+3. 分类表 (categories)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+name	VARCHAR(50)	Unique、Not Null；分类名称
+slug	VARCHAR(50)	Unique、Not Null；URL友好别名
+description	VARCHAR(255)	NULL；分类的简短描述
+4. 标签表 (tags)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+name	VARCHAR(50)	Unique、Not Null；分类名称
+slug	VARCHAR(50)	Unique、Not Null；URL友好别名
+5. 评论表 (comments)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+post_id	INT / BIGINT	Not Null；外键（Foreign Key）-> posts(id)；关联的文章
+user_id	INT / BIGINT	NULL、外键（Foreign Key）-> users(id)；如果是注册用户评论，关联用户 ID
+name	VARCHAR(50)	NULL；评论者名称，如果是游客评论，则此字段非空
+email	VARCHAR(100)	NULL；评论者邮箱，如果是游客评论，则此字段非空
+content	TEXT	Not Null；评论内容
+ip	VARCHAR(100)	Not Null；评论者IP
+status	VARCHAR(20)	Not Null；评论状态，默认 'pending' （'pending'、'approved'、'spam'）
+parent_id	INT / BIGINT	NULL；外键（Foreign Key）-> comments(id)；用于评论回复
+created_at	TIMESTAMP	Not Null；创建时间，默认当前时间
+6. 文章 <-> 标签关联表 (post_tags)
+字段名	数据类型	约束/备注
+post_id	INT / BIGINT	复合主键 & 外键 -> posts(id)
+tag_id	INT / BIGINT	复合主键 & 外键 -> tags(id)
+3个扩展表
+1. 系统设置表 统设置表 (settings)
+字段名	数据类型	约束/备注
+key	VARCHAR(50)	Primary Key；配置项的键
+value	TEXT	NULL；配置项的值
+type	VARCHAR(20)	Not Null；值类型，默认 'str' （'str'、'number'、'json'）
+2. 媒体库表 (media)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+uploader_id	INT / BIGINT	Not Null、外键（Foreign Key）-> users(id)；上传者
+file_name	VARCHAR(255)	Not Null；文件名
+file_path	VARCHAR(255)	Not Null；文件路径或者URL（如存储到其他位置）
+mime_type	VARCHAR(100)	Not Null；文件类型
+size	LONGINT	Not Null；文件大小（字节）
+created_at	TIMESTAMP	Not Null；创建时间，默认当前时间
+3. 第三方关联表 (user_identities)
+字段名	数据类型	约束/备注
+id	INT / BIGINT	Primary Key、Auto Increment
+user	INT / BIGINT	Not Null、外键（Foreign Key）-> users(id)；关联的用户
+provider	VARCHAR(50)	Not Null；第三方名称
+provider_id	VARCHAR(255)	Not Null；第三方平台唯一ID
+后端 API 设计
+通用规范
+● 基础URL：https://<domain.com>/api/v1/
+● 认证：客户端在请求头中添加 Authorization: Bearer <jet_token>，Token 通过登录接口获取。
+● 数据格式：所有请求体和响应体均使用 application/json格式，文件上传下载例外。
+● 响应格式：
+  ○ 成功：
+{
+  "success": true,
+  "data": { ... } // 或 [ ... ]
+}
+  ○ 失败：
+{
+  "success": false,
+  "error": {
+    "code": "<ERROR_CODE>",
+    "message": "<ERROR_MSG>"
+  }
+}
+● HTTP 状态码：
+  ○ 200 OK：请求成功 （GET、PUT、PATCH）
+  ○ 201 Created：资源创建成功（POST）
+  ○ 204 No Content：资源删除成功（DELETE），响应体为空
+  ○ 400 Bad Request：请求无效（如参数错误）
+  ○ 401 Unauthorized：未认证或 Token 无效
+  ○ 403 Forbidden：已认证，但无权限访问该资源
+  ○ 404 Not Found：请求的资源不存在
+  ○ 500 Internal Server Error：服务器内部错误
+
+认证接口
+这些接口用于用户注册、登录和身份认证。
+1. 用户注册
+● 请求：POST /auth/register
+● 认证：否
+● 请求体：
+{
+  "username": "newuser",
+  "email": "email@example.com",
+  "password": "password",
+  "nickname": "New User"
+}
+● 响应（201）：返回新建用户信息（不包含密码）
+2. 用户登录
+● 请求：POST /auth/login
+● 认证：否
+● 请求体：
+{
+  "login": "newuser", // 用户名或者邮箱
+  "password": "password"
+}
+● 响应（200）：返回成功登录的 JWT Token 和用户信息：
+{
+  // ...
+  "data": {
+    "token": "ey...",
+    "user": {
+      "id": 1,
+      "username": "newuser",
+      "nickname": "New User",
+      "role": "admin"
+    }
+  }
+}
+3. 获取当前登录用户信息
+● 请求：GET /auth/me
+● 认证：是
+● 响应（200）：返回当前登录用户信息
+4. 第三方平台授权
+● 请求：GET /auth/{provider}
+● 认证：否
+● 说明：重定向到第三方平台进行授权，服务端路由，不算 API 
+5. 授权回调
+● 请求：GET /auth/{provider}/callback
+● 认证：无
+● 响应：成功则重定向或返回 Token，失败则重定向到登录页面
+6. 关联第三方平台
+● 请求：POST /auth/link/{provider}
+● 认证：是
+● 说明：已登录用户关联第三方平台
+文章接口
+这些接口用于文章的增删改查
+1. 获取文章列表
+● 请求：GET /posts
+● 认证：是 & 否
+● 查询参数：
+  ○ page（number）：页码，默认1
+  ○ limit（number）：每页数量，默认10
+  ○ status（string）：认证可用，按状态筛选，默认只返回发布文章
+  ○ author（number）：管理员认证可用，按作者 ID 筛选文章
+  ○ category（string）：可选，按分类筛选
+  ○ tag（string）：可选，按标签slug筛选
+  ○ detail（number）：返回数据是否包含文章内容字段，默认 1（1、0）
+  ○ sortBy（string）：排序字段，默认'published_a'
+  ○ order（string）：排序方式（asc、desc）
+● 响应（200）：返回文章分页列表
+2. 创建新文章
+● 请求：POST /posts
+● 认证：是
+● 请求体：
+{
+  "title": "My Title",
+  "content": "...",
+  "status": "draft",
+  "category": <category_id>,
+  "tags": ["java", "c-plus-plus"],
+  ...
+}
+● 响应（201）：返回新创建的文章数据
+3. 获取文章详情
+● 请求：GET /posts/{id}
+● 认证：是 & 否
+● 响应（200）：返回文章详细数据，非公开文章需要认证权限
+4. 更新文章
+● 请求：PUT /posts/{id}
+● 认证：是
+● 请求体：与新建文章相同
+● 响应（200）：返回更新后的文章数据
+5. 删除文章
+● 请求：DELETE /posts/{id}
+● 认证：是
+● 响应体（204）：返回删除成功提示信息
+分类和标签接口
+这些接口用于分类和标签的增删改查
+1. 获取分类或标签列表
+● 请求：GET /categories、GET /tags
+● 认证：否
+● 响应（200）：返回分类或标签对象数组
+2. 新建分类或标签
+● 请求：POST /categories、POST /tags
+● 认证：是
+● 请求体：
+{
+  "name": "xxx",
+  "slug": "xxx",
+  // "description": "描述" // 用于category
+}
+● 响应（201）：返回新建分类或标签数据
+3. 更新分类或标签
+● 请求：PUT /category/{id}、PUT /tags/{id}
+● 认证：是
+● 请求体：同 新建分类或标签
+● 响应（200）：返回更新后的分类或标签
+4. 删除分类或标签
+● 请求：DELETE /categories/{id}、DELETE /tags/{id}
+● 认证：是
+● 响应（204）：返回删除状态信息
+评论接口
+这些接口用于评论的增删改查
+1. 获取文章评论列表
+● 请求：GET /posts/{postId}/comments
+● 认证：否
+● 响应（200）：返回文章评论树形结构数组
+2. 发表新评论
+● 请求：POST /posts/{postId}/comments
+● 认证：是 & 否
+● 请求体：
+{
+  "content": "xxx",
+  "parent_id": null,
+  // 未登录用户
+  "name": "Guest",
+  "email": "guest@example.com"
+}
+● 响应（201）：返回新建评论数据（状态可能为 pending）
+3. 更新评论状态
+● 请求：PUT /comments/{id}
+● 认证：是
+● 请求体：
+{
+  "status": "approved"
+}
+● 响应（200）：返回更新后的评论对象数据
+4. 删除评论
+● 请求：DELETE /comments/{id}
+● 认证：是
+● 响应（204）：返回删除状态信息
+媒体库接口
+这些接口用于操作媒体库
+1. 上传文件到媒体库
+● 请求：POST /media/upload
+● 认证：是
+● 请求格式：multipart/form-data或 json（仅限base64编码图片）
+● 响应（201）：返回新建媒体文件数据，包含主要信息和访问 URL
+2. 获取媒体列表
+● 请求：GET /media
+● 认证：是
+● 查询参数：
+  ○ page（number）：分页页数，默认1
+  ○ limit（number）：每页数量，默认20
+● 响应（200）：返回分页的媒体文件数据列表
+3. 删除媒体文件
+● 请求：DELETE /media/{id}
+● 认证：是
+● 响应（204）：返回删除状态信息
+用户接口
+这些接口用于管理用户信息
+1. 获取用户列表
+● 请求：GET /users
+● 认证：是
+● 查询参数：
+  ○ page（number）：分页页数，默认1
+  ○ limit（number）：每页数量，默认20
+● 响应（200）：返回分页的用户列表
+2. 获取单个用户信息
+● 请求：GET /users/{id}
+● 认证：否
+● 响应（200）：返回用户公开的信息
+3. 更新用户信息
+● 请求：PUT /users/{id}
+● 认证：是
+● 请求体：
+{
+  ..., // 用户相关信息
+  // 管理员操作
+  "status": "inactive"
+}
+● 响应（200）：返回更新后的用户信息

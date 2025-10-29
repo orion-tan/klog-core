@@ -1,0 +1,22 @@
+[server]
+port = 8010
+
+[logger]
+level = "info"
+path = "./log/klog.log"
+
+[media]
+media_dir = "./uploads"
+max_file_size_mb = 10 # 10MB
+
+[database]
+type = "sqlite"
+url = "./db/klog.db"
+
+[redis]
+addr = ""
+password = ""
+
+[jwt]
+secret = "your-very-secret-key"
+expire_hour = 72

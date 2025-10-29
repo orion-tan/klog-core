@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# 编译文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+klog-backend
+klog-backend-*
+
+# 测试文件
+*.test
+*.out
+
+# 数据库文件
+*.db
+*.db-shm
+*.db-wal
+db/
+
+# 上传文件
+uploads/
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 文档
+README.md
+docs/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 其他
+.env
+.env.local
+

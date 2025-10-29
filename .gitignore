@@ -1,0 +1,47 @@
+# 编译后的二进制文件
+klog-backend
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 测试文件
+*.test
+*.out
+
+# Go workspace文件
+go.work
+
+# 数据库文件
+*.db
+*.db-shm
+*.db-wal
+db/
+
+# 上传的文件
+uploads/
+!uploads/.gitkeep
+
+# 日志文件
+*.log
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 环境变量文件
+.env
+.env.local
+
+# 临时文件
+tmp/
+temp/
+
