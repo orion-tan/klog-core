@@ -55,14 +55,8 @@ func (h *PostHandler) GetPostByID(c *gin.Context) {
 
 	// 检查是否有权限访问非公开文章
 	if post.Status != "published" {
-		claims, exists := c.Get("claims")
+		_, exists := c.Get("claims")
 		if !exists {
-			utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权访问此文章")
-			return
-		}
-		klogClaims := claims.(*utils.KLogClaims)
-		// 只有作者或管理员可以访问非公开文章
-		if post.AuthorID != klogClaims.UserID && klogClaims.Role != "admin" {
 			utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权访问此文章")
 			return
 		}
@@ -96,21 +90,8 @@ func (h *PostHandler) GetPosts(c *gin.Context) {
 	}
 
 	// 检查权限
-	claims, exists := c.Get("claims")
-	if exists {
-		klogClaims := claims.(*utils.KLogClaims)
-		// 非管理员只能看到已发布的文章或自己的文章
-		if klogClaims.Role != "admin" {
-			// 普通用户：只能查看已发布的文章，或者查看自己的文章
-			if status != "" && status != "published" {
-				// 如果查询非发布状态，只能查看自己的
-				authorID = &klogClaims.UserID
-			} else if authorID != nil && *authorID != klogClaims.UserID {
-				// 如果查询其他作者，强制只显示已发布的
-				status = "published"
-			}
-		}
-	} else {
+	_, exists := c.Get("claims")
+	if !exists {
 		// 未认证用户只能看到已发布的文章
 		status = "published"
 		authorID = nil
@@ -151,19 +132,10 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 		return
 	}
 
-	// 检查权限
-	post, err := h.postService.GetPostByID(uint(id))
+	// 检查文章是否存在
+	_, err = h.postService.GetPostByID(uint(id))
 	if err != nil {
 		utils.ResponseError(c, http.StatusNotFound, "POST_NOT_FOUND", "文章不存在")
-		return
-	}
-
-	claims, _ := c.Get("claims")
-	klogClaims := claims.(*utils.KLogClaims)
-
-	// 只有作者或管理员可以更新文章
-	if post.AuthorID != klogClaims.UserID && klogClaims.Role != "admin" {
-		utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权更新此文章")
 		return
 	}
 
@@ -182,22 +154,6 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		utils.ResponseError(c, http.StatusBadRequest, "INVALID_ID", "无效的文章ID")
-		return
-	}
-
-	// 检查权限
-	post, err := h.postService.GetPostByID(uint(id))
-	if err != nil {
-		utils.ResponseError(c, http.StatusNotFound, "POST_NOT_FOUND", "文章不存在")
-		return
-	}
-
-	claims, _ := c.Get("claims")
-	klogClaims := claims.(*utils.KLogClaims)
-
-	// 只有作者或管理员可以删除文章
-	if post.AuthorID != klogClaims.UserID && klogClaims.Role != "admin" {
-		utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权删除此文章")
 		return
 	}
 

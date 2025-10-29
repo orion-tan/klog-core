@@ -4,30 +4,27 @@ import (
 	"time"
 )
 
-// User 用户表
+// User 用户表（单用户设计，仅存储唯一管理员账号）
 type User struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	Username  string    `gorm:"type:varchar(50);uniqueIndex;not null" json:"username"`
 	Password  string    `gorm:"type:varchar(255);not null" json:"-"` // 不在 JSON 中返回密码
 	Email     string    `gorm:"type:varchar(100);uniqueIndex;not null" json:"email"`
 	Nickname  string    `gorm:"type:varchar(50);not null" json:"nickname"`
-	AvatarURL string    `gorm:"type:varchar(255)" json:"avatar_url"`
-	Role      string    `gorm:"type:varchar(20);not null;default:'author'" json:"role"`   // 'author', 'admin'
-	Status    string    `gorm:"type:varchar(20);not null;default:'active'" json:"status"` // 'active', 'inactive'
+	Bio       *string   `gorm:"type:text" json:"bio,omitempty"`
+	AvatarURL *string   `gorm:"type:varchar(255)" json:"avatar_url,omitempty"`
 	CreatedAt time.Time `gorm:"not null;autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"not null;autoUpdateTime" json:"updated_at"`
 
 	// 关联关系
-	Posts          []Post         `gorm:"foreignKey:AuthorID" json:"posts,omitempty"`
-	Comments       []Comment      `gorm:"foreignKey:UserID" json:"comments,omitempty"`
-	MediaFiles     []Media        `gorm:"foreignKey:UploaderID" json:"media_files,omitempty"`
-	UserIdentities []UserIdentity `gorm:"foreignKey:UserID" json:"user_identities,omitempty"`
+	Posts    []Post    `gorm:"foreignKey:AuthorID" json:"posts,omitempty"`
+	Comments []Comment `gorm:"foreignKey:UserID" json:"comments,omitempty"`
 }
 
 // Post 文章表
 type Post struct {
 	ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
-	CategoryID    *uint      `gorm:"index" json:"category_id"` // 可为空，使用指针
+	CategoryID    *uint      `gorm:"index" json:"category_id"` // 可以没有分类
 	AuthorID      uint       `gorm:"not null;index" json:"author_id"`
 	Title         string     `gorm:"type:varchar(255);not null" json:"title"`
 	Slug          string     `gorm:"type:varchar(255);uniqueIndex;not null" json:"slug"`
@@ -36,7 +33,7 @@ type Post struct {
 	CoverImageURL string     `gorm:"type:varchar(255)" json:"cover_image_url"`
 	Status        string     `gorm:"type:varchar(20);not null;default:'draft';index" json:"status"` // 'draft', 'published', 'archived'
 	ViewCount     uint64     `gorm:"not null;default:0" json:"view_count"`
-	PublishedAt   *time.Time `json:"published_at"` // 可为空，使用指针
+	PublishedAt   *time.Time `json:"published_at"`
 	CreatedAt     time.Time  `gorm:"not null;autoCreateTime" json:"created_at"`
 	UpdatedAt     time.Time  `gorm:"not null;autoUpdateTime" json:"updated_at"`
 
@@ -49,10 +46,10 @@ type Post struct {
 
 // Category 分类表
 type Category struct {
-	ID          uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string `gorm:"type:varchar(50);uniqueIndex;not null" json:"name"`
-	Slug        string `gorm:"type:varchar(50);uniqueIndex;not null" json:"slug"`
-	Description string `gorm:"type:varchar(255);not null" json:"description"`
+	ID          uint    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name        string  `gorm:"type:varchar(50);uniqueIndex;not null" json:"name"`
+	Slug        string  `gorm:"type:varchar(50);uniqueIndex;not null" json:"slug"`
+	Description *string `gorm:"type:text" json:"description"`
 
 	// 关联关系
 	Posts []Post `gorm:"foreignKey:CategoryID" json:"posts,omitempty"`
@@ -78,13 +75,13 @@ type PostTag struct {
 type Comment struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	PostID    uint      `gorm:"not null;index" json:"post_id"`
-	UserID    *uint     `gorm:"index" json:"user_id"`           // 可为空（游客评论），使用指针
+	UserID    *uint     `gorm:"index" json:"user_id"`           // 可为空（游客评论）
 	Name      string    `gorm:"type:varchar(50)" json:"name"`   // 游客评论时使用
 	Email     string    `gorm:"type:varchar(100)" json:"email"` // 游客评论时使用
 	Content   string    `gorm:"type:text;not null" json:"content"`
 	IP        string    `gorm:"type:varchar(100);not null" json:"ip"`
 	Status    string    `gorm:"type:varchar(20);not null;default:'pending';index" json:"status"` // 'pending', 'approved', 'spam'
-	ParentID  *uint     `gorm:"index" json:"parent_id"`                                          // 可为空（顶级评论），使用指针
+	ParentID  *uint     `gorm:"index" json:"parent_id"`                                          // 可为空（顶级评论）
 	CreatedAt time.Time `gorm:"not null;autoCreateTime" json:"created_at"`
 
 	// 关联关系
@@ -101,31 +98,16 @@ type Setting struct {
 	Type  string `gorm:"type:varchar(20);not null;default:'str'" json:"type"` // 'str', 'number', 'json'
 }
 
-// Media 媒体库表
+// Media 媒体库表（单用户设计，无需记录上传者信息）
 type Media struct {
-	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	UploaderID uint      `gorm:"not null;index" json:"uploader_id"`
-	FileName   string    `gorm:"type:varchar(255);not null" json:"file_name"`
-	FilePath   string    `gorm:"type:varchar(255);not null" json:"file_path"`
-	FileHash   string    `gorm:"type:varchar(255);index" json:"file_hash"`
-	MimeType   string    `gorm:"type:varchar(100);not null" json:"mime_type"`
-	Size       int64     `gorm:"not null" json:"size"` // 文件大小（字节）
-	CreatedAt  time.Time `gorm:"not null;autoCreateTime" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"not null;autoUpdateTime" json:"updated_at"`
-
-	// 关联关系
-	Uploader User `gorm:"foreignKey:UploaderID;constraint:OnDelete:RESTRICT" json:"uploader,omitempty"`
-}
-
-// UserIdentity 第三方关联表
-type UserIdentity struct {
-	ID         uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID     uint   `gorm:"not null;index" json:"user_id"`
-	Provider   string `gorm:"type:varchar(50);not null;index" json:"provider"` // 第三方平台名称
-	ProviderID string `gorm:"type:varchar(255);not null" json:"provider_id"`   // 第三方平台唯一ID
-
-	// 关联关系
-	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user,omitempty"`
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	FileName  string    `gorm:"type:varchar(255);not null" json:"file_name"`
+	FilePath  string    `gorm:"type:varchar(255);not null" json:"file_path"`
+	FileHash  string    `gorm:"type:varchar(255);index" json:"file_hash"`
+	MimeType  string    `gorm:"type:varchar(100);not null" json:"mime_type"`
+	Size      int64     `gorm:"not null" json:"size"` // 文件大小（字节）
+	CreatedAt time.Time `gorm:"not null;autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"not null;autoUpdateTime" json:"updated_at"`
 }
 
 // 指定表名
@@ -159,8 +141,4 @@ func (Setting) TableName() string {
 
 func (Media) TableName() string {
 	return "media"
-}
-
-func (UserIdentity) TableName() string {
-	return "user_identities"
 }

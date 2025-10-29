@@ -120,9 +120,6 @@ func (s *PostService) GetPostByID(postID uint) (*model.Post, error) {
 		return nil, err
 	}
 
-	// 增加浏览量
-	// _ = s.postRepo.IncrementViewCount(postID)
-
 	return post, nil
 }
 
@@ -151,8 +148,8 @@ func (s *PostService) UpdatePost(postID uint, req *api.PostUpdateRequest) (*mode
 	}
 
 	// 检查slug是否已被其他文章使用
-	if req.Slug != "" && req.Slug != post.Slug {
-		existingPost, err := s.postRepo.GetPostBySlug(req.Slug, false)
+	if req.Slug != nil && *req.Slug != "" && *req.Slug != post.Slug {
+		existingPost, err := s.postRepo.GetPostBySlug(*req.Slug, false)
 		if err == nil && existingPost.ID != postID {
 			return nil, errors.New("文章slug已被使用")
 		}
@@ -164,50 +161,59 @@ func (s *PostService) UpdatePost(postID uint, req *api.PostUpdateRequest) (*mode
 		if err != nil {
 			return nil, errors.New("分类不存在，请先创建分类")
 		}
+		post.CategoryID = req.CategoryID
 	}
 
 	// 更新字段
-	if req.CategoryID != nil {
-		post.CategoryID = req.CategoryID
+	if req.Title != nil && *req.Title != "" {
+		post.Title = *req.Title
 	}
-	if req.Title != "" {
-		post.Title = req.Title
+	if req.Slug != nil && *req.Slug != "" {
+		post.Slug = *req.Slug
 	}
-	if req.Slug != "" {
-		post.Slug = req.Slug
+	if req.Content != nil && *req.Content != "" {
+		post.Content = *req.Content
 	}
-	if req.Content != "" {
-		post.Content = req.Content
+	if req.Excerpt != nil {
+		post.Excerpt = *req.Excerpt
 	}
-	if req.Excerpt != "" {
-		post.Excerpt = req.Excerpt
+	if req.CoverImageURL != nil {
+		if *req.CoverImageURL != "" {
+			if !utils.ValidateURL(*req.CoverImageURL) {
+				return nil, errors.New("封面图片URL格式不正确")
+			}
+			post.CoverImageURL = *req.CoverImageURL
+		} else {
+			post.CoverImageURL = ""
+		}
 	}
-	if req.CoverImageURL != "" {
-		post.CoverImageURL = req.CoverImageURL
-	}
-	if req.Status != "" {
+	if req.Status != nil && *req.Status != "" {
 		// 如果从非发布状态更改为发布状态，设置发布时间
-		if post.Status != "published" && req.Status == "published" {
+		if post.Status != "published" && *req.Status == "published" {
 			now := time.Now()
 			post.PublishedAt = &now
 		}
-		post.Status = req.Status
+		// 安全设置状态
+		if *req.Status != "draft" && *req.Status != "published" && *req.Status != "archived" {
+			return nil, errors.New("文章状态只能是draft、published或archived")
+		}
+		post.Status = *req.Status
 	}
 
 	// 检查标签
 	var tags []model.Tag
-	if len(req.Tags) > 0 {
-		tags, err = s.tagRepo.GetTagsBySlugs(req.Tags)
+	if req.Tags != nil && len(*req.Tags) > 0 {
+		tags, err = s.tagRepo.GetTagsBySlugs(*req.Tags)
 		if err != nil {
 			return nil, errors.New("获取标签失败")
 		}
-		if len(tags) != len(req.Tags) {
+		if len(tags) != len(*req.Tags) {
 			foundSlugs := make(map[string]bool)
 			for _, tag := range tags {
 				foundSlugs[tag.Slug] = true
 			}
 			missingSlugs := []string{}
-			for _, slug := range req.Tags {
+			for _, slug := range *req.Tags {
 				if !foundSlugs[slug] {
 					missingSlugs = append(missingSlugs, slug)
 				}

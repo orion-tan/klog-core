@@ -8,8 +8,6 @@ import (
 	"klog-backend/internal/model"
 	"klog-backend/internal/repository"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type TagService struct {
@@ -53,12 +51,17 @@ func (s *TagService) GetTags() ([]model.Tag, error) {
 // CreateTag 创建标签
 func (s *TagService) CreateTag(req *api.TagCreateRequest) (*model.Tag, error) {
 	// 检查slug是否已存在
-	_, err := s.tagRepo.GetTagBySlug(req.Slug)
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	tag, err := s.tagRepo.GetTagBySlug(req.Slug)
+	if err == nil && tag.ID != 0 {
 		return nil, errors.New("标签slug已存在")
 	}
+	// 检查name是否已存在
+	tag, err = s.tagRepo.GetTagByName(req.Name)
+	if err == nil && tag.ID != 0 {
+		return nil, errors.New("标签name已存在")
+	}
 
-	tag := &model.Tag{
+	tag = &model.Tag{
 		Name: req.Name,
 		Slug: req.Slug,
 	}
@@ -81,19 +84,19 @@ func (s *TagService) UpdateTag(id uint, req *api.TagUpdateRequest) (*model.Tag, 
 	}
 
 	// 检查slug是否被其他标签使用
-	if req.Slug != "" && req.Slug != tag.Slug {
-		existingTag, err := s.tagRepo.GetTagBySlug(req.Slug)
+	if req.Slug != nil && *req.Slug != "" && *req.Slug != tag.Slug {
+		existingTag, err := s.tagRepo.GetTagBySlug(*req.Slug)
 		if err == nil && existingTag.ID != id {
 			return nil, errors.New("标签slug已被使用")
 		}
 	}
 
 	// 更新字段
-	if req.Name != "" {
-		tag.Name = req.Name
+	if req.Name != nil && *req.Name != "" {
+		tag.Name = *req.Name
 	}
-	if req.Slug != "" {
-		tag.Slug = req.Slug
+	if req.Slug != nil && *req.Slug != "" {
+		tag.Slug = *req.Slug
 	}
 
 	if err := s.tagRepo.UpdateTag(tag); err != nil {
@@ -116,7 +119,7 @@ func (s *TagService) DeleteTag(id uint) error {
 	// 检查是否有文章使用该标签
 	count, err := s.postRepo.CountPostsByTagID(id)
 	if err != nil {
-		return fmt.Errorf("检查标签使用情况失败: %w", err)
+		return fmt.Errorf("查询数据库失败: %w", err)
 	}
 	if count > 0 {
 		return fmt.Errorf("该标签被 %d 篇文章使用，无法删除", count)

@@ -59,6 +59,17 @@ func LogAudit(c *gin.Context, action, resource, resourceID, details, result stri
 	)
 }
 
+// 记录注册日志
+func LogRegister(c *gin.Context, username string, success bool) {
+	result := "success"
+	details := "用户注册成功"
+	if !success {
+		result = "failure"
+		details = "用户注册失败"
+	}
+	LogAudit(c, "register", "auth", username, details, result)
+}
+
 // LogLogin 记录登录日志
 func LogLogin(c *gin.Context, username string, success bool) {
 	result := "success"

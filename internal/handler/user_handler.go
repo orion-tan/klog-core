@@ -18,25 +18,6 @@ func NewUserHandler(userService *services.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
-// GetUsers 获取用户列表
-func (h *UserHandler) GetUsers(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-
-	users, total, err := h.userService.GetUsers(page, limit)
-	if err != nil {
-		utils.ResponseError(c, http.StatusInternalServerError, "GET_USERS_FAILED", err.Error())
-		return
-	}
-
-	utils.ResponseSuccess(c, http.StatusOK, api.PaginatedResponse{
-		Total: int(total),
-		Page:  page,
-		Limit: limit,
-		Data:  users,
-	})
-}
-
 // GetUserByID 获取单个用户信息
 func (h *UserHandler) GetUserByID(c *gin.Context) {
 	idStr := c.Param("id")
@@ -53,14 +34,13 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 	}
 
 	// 返回公开信息
-	response := api.UserRegisterResponse{
+	response := api.UserGetMeResponse{
 		ID:        user.ID,
 		Username:  user.Username,
 		Email:     user.Email,
 		Nickname:  user.Nickname,
+		Bio:       user.Bio,
 		AvatarURL: user.AvatarURL,
-		Role:      user.Role,
-		Status:    user.Status,
 	}
 
 	utils.ResponseSuccess(c, http.StatusOK, response)
@@ -84,15 +64,10 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	claims, _ := c.Get("claims")
 	klogClaims := claims.(*utils.KLogClaims)
 
-	// 检查权限：只能更新自己的信息，或者管理员可以更新任何用户
-	if klogClaims.UserID != uint(id) && klogClaims.Role != "admin" {
+	// 检查权限
+	if klogClaims.UserID != uint(id) {
 		utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权更新此用户信息")
 		return
-	}
-
-	// 非管理员不能修改状态
-	if klogClaims.Role != "admin" {
-		req.Status = ""
 	}
 
 	user, err := h.userService.UpdateUser(uint(id), &req)
@@ -101,16 +76,14 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	response := api.UserRegisterResponse{
+	response := api.UserGetMeResponse{
 		ID:        user.ID,
 		Username:  user.Username,
 		Email:     user.Email,
 		Nickname:  user.Nickname,
+		Bio:       user.Bio,
 		AvatarURL: user.AvatarURL,
-		Role:      user.Role,
-		Status:    user.Status,
 	}
 
 	utils.ResponseSuccess(c, http.StatusOK, response)
 }
-

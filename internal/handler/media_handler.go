@@ -25,17 +25,6 @@ func NewMediaHandler(mediaService *services.MediaService) *MediaHandler {
 
 // UploadMedia 上传媒体文件
 func (h *MediaHandler) UploadMedia(c *gin.Context) {
-	claims, exists := c.Get("claims")
-	if !exists {
-		utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "未找到用户认证信息")
-		return
-	}
-	klogClaims, ok := claims.(*utils.KLogClaims)
-	if !ok {
-		utils.ResponseError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "用户信息类型错误")
-		return
-	}
-
 	contentType := c.ContentType()
 
 	var fileData *services.FileData
@@ -61,7 +50,7 @@ func (h *MediaHandler) UploadMedia(c *gin.Context) {
 	}
 
 	// 交给Service层处理
-	media, err := h.mediaService.SaveMediaFile(fileData, klogClaims.UserID)
+	media, err := h.mediaService.SaveMediaFile(fileData)
 	if err != nil {
 		// 记录上传失败的审计日志
 		utils.LogFileOperation(c, "upload_file", "", fileData.FileName, false)
@@ -188,17 +177,6 @@ func (h *MediaHandler) GetMediaList(c *gin.Context) {
 
 // DeleteMedia 删除媒体文件
 func (h *MediaHandler) DeleteMedia(c *gin.Context) {
-	claims, exists := c.Get("claims")
-	if !exists {
-		utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "未找到用户认证信息")
-		return
-	}
-	klogClaims, ok := claims.(*utils.KLogClaims)
-	if !ok {
-		utils.ResponseError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "用户信息类型错误")
-		return
-	}
-
 	// 解析和验证ID
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -207,24 +185,16 @@ func (h *MediaHandler) DeleteMedia(c *gin.Context) {
 		return
 	}
 
-	// 权限检查（在Service层获取media信息）
-	if err := h.mediaService.CheckDeletePermission(uint(id), klogClaims.UserID, klogClaims.Role); err != nil {
-		switch err {
-		case services.ErrMediaNotFound:
-			utils.ResponseError(c, http.StatusNotFound, "MEDIA_NOT_FOUND", "媒体文件不存在")
-		case services.ErrPermissionDenied:
-			utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "无权删除此媒体文件")
-		default:
-			utils.ResponseError(c, http.StatusInternalServerError, "CHECK_PERMISSION_FAILED", err.Error())
-		}
-		return
-	}
-
 	// 删除媒体文件（包括物理文件和数据库记录）
 	if err := h.mediaService.DeleteMediaWithFile(uint(id)); err != nil {
 		// 记录删除失败的审计日志
 		utils.LogFileOperation(c, "delete_file", idStr, "", false)
-		utils.ResponseError(c, http.StatusInternalServerError, "DELETE_MEDIA_FAILED", err.Error())
+
+		if err == services.ErrMediaNotFound {
+			utils.ResponseError(c, http.StatusNotFound, "MEDIA_NOT_FOUND", "媒体文件不存在")
+		} else {
+			utils.ResponseError(c, http.StatusInternalServerError, "DELETE_MEDIA_FAILED", err.Error())
+		}
 		return
 	}
 

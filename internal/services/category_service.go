@@ -8,8 +8,6 @@ import (
 	"klog-backend/internal/model"
 	"klog-backend/internal/repository"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type CategoryService struct {
@@ -53,15 +51,15 @@ func (s *CategoryService) GetCategories() ([]model.Category, error) {
 // CreateCategory 创建分类
 func (s *CategoryService) CreateCategory(req *api.CategoryCreateRequest) (*model.Category, error) {
 	// 检查slug是否已存在
-	_, err := s.categoryRepo.GetCategoryBySlug(req.Slug)
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	category, err := s.categoryRepo.GetCategoryBySlug(req.Slug)
+	if err == nil && category.ID != 0 {
 		return nil, errors.New("分类slug已存在")
 	}
 
-	category := &model.Category{
+	category = &model.Category{
 		Name:        req.Name,
 		Slug:        req.Slug,
-		Description: req.Description,
+		Description: &req.Description,
 	}
 
 	if err := s.categoryRepo.CreateCategory(category); err != nil {
@@ -82,21 +80,21 @@ func (s *CategoryService) UpdateCategory(id uint, req *api.CategoryUpdateRequest
 	}
 
 	// 检查slug是否被其他分类使用
-	if req.Slug != "" && req.Slug != category.Slug {
-		existingCategory, err := s.categoryRepo.GetCategoryBySlug(req.Slug)
+	if req.Slug != nil && *req.Slug != "" && *req.Slug != category.Slug {
+		existingCategory, err := s.categoryRepo.GetCategoryBySlug(*req.Slug)
 		if err == nil && existingCategory.ID != id {
 			return nil, errors.New("分类slug已被使用")
 		}
 	}
 
 	// 更新字段
-	if req.Name != "" {
-		category.Name = req.Name
+	if req.Name != nil && *req.Name != "" {
+		category.Name = *req.Name
 	}
-	if req.Slug != "" {
-		category.Slug = req.Slug
+	if req.Slug != nil && *req.Slug != "" {
+		category.Slug = *req.Slug
 	}
-	if req.Description != "" {
+	if req.Description != nil {
 		category.Description = req.Description
 	}
 
@@ -120,7 +118,7 @@ func (s *CategoryService) DeleteCategory(id uint) error {
 	// 检查是否有文章使用该分类
 	count, err := s.postRepo.CountPostsByCategoryID(id)
 	if err != nil {
-		return fmt.Errorf("检查分类使用情况失败: %w", err)
+		return fmt.Errorf("查询数据库失败: %w", err)
 	}
 	if count > 0 {
 		return fmt.Errorf("该分类下有 %d 篇文章，无法删除", count)

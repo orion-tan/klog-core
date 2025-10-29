@@ -8,33 +8,28 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// KLogClaims JWT Claims
 type KLogClaims struct {
-	UserID uint `json:"user_id"`
+	UserID   uint   `json:"user_id"`
 	Username string `json:"username"`
-	Role string `json:"role"`
-	Status string `json:"status"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken 生成Token
 // @userID 用户ID
 // @username 用户名
-// @role 角色
-// @status 状态
 // @return Token, 错误
-func GenerateToken(userID uint, username, role, status string) (string, error) {
+func GenerateToken(userID uint, username string) (string, error) {
 	claims := KLogClaims{
-		UserID: userID,
+		UserID:   userID,
 		Username: username,
-		Role: role,
-		Status: status,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.Cfg.Jwt.ExpireHour) * time.Hour)),
-			IssuedAt: jwt.NewNumericDate(time.Now()),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
-			Issuer: "klog-backend",
-			Subject: username,
-			Audience: jwt.ClaimStrings{"klog-backend"},
+			Issuer:    "klog-backend",
+			Subject:   username,
+			Audience:  jwt.ClaimStrings{"klog-backend"},
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

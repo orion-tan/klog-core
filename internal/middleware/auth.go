@@ -2,13 +2,12 @@ package middleware
 
 import (
 	"klog-backend/internal/utils"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-// JWTAuthOptional 可选的JWT认证中间件（用于某些接口既支持已认证又支持未认证访问）
+// JWTAuthOptional 可选的JWT认证中间件
 func JWTAuthOptional() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -33,25 +32,3 @@ func JWTAuthOptional() gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// AdminAuth 管理员权限验证中间件
-func AdminAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		claims, exists := c.Get("claims")
-		if !exists {
-			utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "需要登录")
-			c.Abort()
-			return
-		}
-
-		klogClaims := claims.(*utils.KLogClaims)
-		if klogClaims.Role != "admin" {
-			utils.ResponseError(c, http.StatusForbidden, "FORBIDDEN", "需要管理员权限")
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
-}
-

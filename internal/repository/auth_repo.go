@@ -56,3 +56,11 @@ func (r *AuthRepository) GetUserByID(userID uint) (*model.User, error) {
 	}
 	return &user, nil
 }
+
+// CountUsers 统计用户数量
+// @return 用户数量, 错误
+func (r *AuthRepository) CountUsers() (int64, error) {
+	var count int64
+	err := r.DB.Model(&model.User{}).Count(&count).Error
+	return count, err
+}

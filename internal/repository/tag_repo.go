@@ -45,6 +45,18 @@ func (r *TagRepository) GetTagBySlug(slug string) (*model.Tag, error) {
 	return &tag, nil
 }
 
+// GetTagByName 根据Name获取标签
+// @name 标签Name
+// @return 标签, 错误
+func (r *TagRepository) GetTagByName(name string) (*model.Tag, error) {
+	var tag model.Tag
+	err := r.DB.Where("name = ?", name).First(&tag).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
 // GetTags 获取所有标签
 // @return 标签列表, 错误
 func (r *TagRepository) GetTags() ([]model.Tag, error) {
@@ -81,4 +93,3 @@ func (r *TagRepository) UpdateTag(tag *model.Tag) error {
 func (r *TagRepository) DeleteTag(tagID uint) error {
 	return r.DB.Delete(&model.Tag{}, tagID).Error
 }
-

@@ -96,6 +96,32 @@ func Exists(key string) (bool, error) {
 	return result > 0, err
 }
 
+// AddToBlacklist 将JWT token添加到黑名单（用于登出功能）
+// @token JWT token字符串
+// @expiration 过期时间（应与token的过期时间一致）
+// @return 错误
+func AddToBlacklist(token string, expiration time.Duration) error {
+	if RedisClient == nil {
+		return nil // Redis未启用时跳过
+	}
+
+	key := "jwt:blacklist:" + token
+	return RedisClient.Set(ctx, key, "1", expiration).Err()
+}
+
+// IsInBlacklist 检查JWT token是否在黑名单中
+// @token JWT token字符串
+// @return 是否在黑名单中, 错误
+func IsInBlacklist(token string) (bool, error) {
+	if RedisClient == nil {
+		return false, nil // Redis未启用时返回false
+	}
+
+	key := "jwt:blacklist:" + token
+	exists, err := RedisClient.Exists(ctx, key).Result()
+	return exists > 0, err
+}
+
 // CloseRedis 关闭Redis连接
 func CloseRedis() error {
 	if RedisClient != nil {

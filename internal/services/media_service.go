@@ -65,16 +65,15 @@ func NewMediaService(mediaRepo *repository.MediaRepository) *MediaService {
 
 // SaveMediaFile 保存媒体文件（包括物理文件和数据库记录）
 // @fileData 文件数据
-// @uploaderID 上传者ID
 // @return 媒体文件, 错误
-func (s *MediaService) SaveMediaFile(fileData *FileData, uploaderID uint) (*model.Media, error) {
+func (s *MediaService) SaveMediaFile(fileData *FileData) (*model.Media, error) {
 	// 1. 验证文件
 	if err := s.validateFile(fileData); err != nil {
 		return nil, err
 	}
 
 	// 2. 生成唯一文件名
-	fileName := s.generateFileName(uploaderID, fileData.FileName)
+	fileName := s.generateFileName(fileData.FileName)
 
 	// 3. 确保上传目录存在
 	uploadDir := config.Cfg.Media.MediaDir
@@ -99,12 +98,11 @@ func (s *MediaService) SaveMediaFile(fileData *FileData, uploaderID uint) (*mode
 
 	// 6. 创建数据库记录
 	media := &model.Media{
-		UploaderID: uploaderID,
-		FileName:   fileData.FileName,
-		FilePath:   fileName,
-		FileHash:   fileHash,
-		MimeType:   fileData.MimeType,
-		Size:       fileData.Size,
+		FileName: fileData.FileName,
+		FilePath: fileName,
+		FileHash: fileHash,
+		MimeType: fileData.MimeType,
+		Size:     fileData.Size,
 	}
 
 	if err := s.mediaRepo.CreateMedia(media); err != nil {
@@ -214,12 +212,11 @@ func (s *MediaService) calculateFileHash(fileBytes []byte) (string, error) {
 }
 
 // generateFileName 生成安全的文件名（使用 SHA-256）
-// @uploaderID 上传者ID
 // @originalName 原始文件名
 // @return 生成的文件名
-func (s *MediaService) generateFileName(uploaderID uint, originalName string) string {
+func (s *MediaService) generateFileName(originalName string) string {
 	ext := strings.ToLower(filepath.Ext(originalName))
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%d-%d-%s", uploaderID, time.Now().UnixNano(), originalName)))
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), originalName)))
 	return hex.EncodeToString(hash[:]) + ext
 }
 
@@ -312,29 +309,6 @@ func (s *MediaService) GetMediaByID(mediaID uint) (*model.Media, error) {
 // @return 媒体文件列表, 总数, 错误
 func (s *MediaService) GetMediaList(page, limit int) ([]model.Media, int64, error) {
 	return s.mediaRepo.GetMediaList(page, limit)
-}
-
-// CheckDeletePermission 检查删除权限
-// @mediaID 媒体文件ID
-// @userID 用户ID
-// @role 用户角色
-// @return 错误
-func (s *MediaService) CheckDeletePermission(mediaID uint, userID uint, role string) error {
-	media, err := s.mediaRepo.GetMediaByID(mediaID)
-	if err != nil {
-		// 精确判断错误类型
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrMediaNotFound
-		}
-		return fmt.Errorf("查询媒体文件失败: %w", err)
-	}
-
-	// 只有上传者本人或管理员可以删除
-	if media.UploaderID != userID && role != "admin" {
-		return ErrPermissionDenied
-	}
-
-	return nil
 }
 
 // DeleteMediaWithFile 删除媒体文件（包括物理文件和数据库记录）

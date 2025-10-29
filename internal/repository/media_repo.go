@@ -31,7 +31,7 @@ func (r *MediaRepository) CreateMedia(media *model.Media) error {
 // @return 媒体文件, 错误
 func (r *MediaRepository) GetMediaByID(mediaID uint) (*model.Media, error) {
 	var media model.Media
-	err := r.DB.Preload("Uploader").First(&media, mediaID).Error
+	err := r.DB.First(&media, mediaID).Error
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (r *MediaRepository) GetMediaList(page, limit int) ([]model.Media, int64, e
 
 	// 分页
 	offset := (page - 1) * limit
-	query = query.Offset(offset).Limit(limit).Order("created_at DESC").Preload("Uploader")
+	query = query.Offset(offset).Limit(limit).Order("created_at DESC")
 
 	if err := query.Find(&mediaList).Error; err != nil {
 		return nil, 0, err

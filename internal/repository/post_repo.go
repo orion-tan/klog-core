@@ -188,8 +188,8 @@ func (r *PostRepository) DeletePost(postID uint) error {
 // IncrementViewCount 增加文章浏览量
 // @postID 文章ID
 // @return 错误
-func (r *PostRepository) IncrementViewCount(postID uint) error {
-	return r.DB.Model(&model.Post{}).Where("id = ?", postID).UpdateColumn("view_count", gorm.Expr("view_count + ?", 1)).Error
+func (r *PostRepository) IncrementViewCount(postID uint, increment uint64) error {
+	return r.DB.Model(&model.Post{}).Where("id = ?", postID).Update("view_count", gorm.Expr("view_count + ?", increment)).Error
 }
 
 // AssociateTags 关联标签

@@ -43,9 +43,10 @@ func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 		// 认证路由
 		auth := apiV1.Group("/auth")
 		{
-			auth.POST("/register", handlers.AuthHandler.Register)
+			auth.POST("/register", handlers.AuthHandler.Register) // 仅供首次设置管理员账号
 			auth.POST("/login", handlers.AuthHandler.Login)
 			auth.GET("/me", middleware.JWTAuth(), handlers.AuthHandler.GetMe)
+			auth.POST("/logout", middleware.JWTAuth(), handlers.AuthHandler.Logout)
 		}
 
 		// 文章路由
@@ -66,25 +67,25 @@ func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 		categories := apiV1.Group("/categories")
 		{
 			categories.GET("", handlers.CategoryHandler.GetCategories)
-			categories.POST("", middleware.JWTAuth(), middleware.AdminAuth(), handlers.CategoryHandler.CreateCategory)
-			categories.PUT("/:id", middleware.JWTAuth(), middleware.AdminAuth(), handlers.CategoryHandler.UpdateCategory)
-			categories.DELETE("/:id", middleware.JWTAuth(), middleware.AdminAuth(), handlers.CategoryHandler.DeleteCategory)
+			categories.POST("", middleware.JWTAuth(), handlers.CategoryHandler.CreateCategory)
+			categories.PUT("/:id", middleware.JWTAuth(), handlers.CategoryHandler.UpdateCategory)
+			categories.DELETE("/:id", middleware.JWTAuth(), handlers.CategoryHandler.DeleteCategory)
 		}
 
 		// 标签路由
 		tags := apiV1.Group("/tags")
 		{
 			tags.GET("", handlers.TagHandler.GetTags)
-			tags.POST("", middleware.JWTAuth(), middleware.AdminAuth(), handlers.TagHandler.CreateTag)
-			tags.PUT("/:id", middleware.JWTAuth(), middleware.AdminAuth(), handlers.TagHandler.UpdateTag)
-			tags.DELETE("/:id", middleware.JWTAuth(), middleware.AdminAuth(), handlers.TagHandler.DeleteTag)
+			tags.POST("", middleware.JWTAuth(), handlers.TagHandler.CreateTag)
+			tags.PUT("/:id", middleware.JWTAuth(), handlers.TagHandler.UpdateTag)
+			tags.DELETE("/:id", middleware.JWTAuth(), handlers.TagHandler.DeleteTag)
 		}
 
 		// 评论路由
 		comments := apiV1.Group("/comments")
 		{
-			comments.PUT("/:id", middleware.JWTAuth(), middleware.AdminAuth(), handlers.CommentHandler.UpdateCommentStatus)
-			comments.DELETE("/:id", middleware.JWTAuth(), middleware.AdminAuth(), handlers.CommentHandler.DeleteComment)
+			comments.PUT("/:id", middleware.JWTAuth(), handlers.CommentHandler.UpdateCommentStatus)
+			comments.DELETE("/:id", middleware.JWTAuth(), handlers.CommentHandler.DeleteComment)
 		}
 
 		// 媒体库路由
@@ -101,7 +102,6 @@ func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 		// 用户路由
 		users := apiV1.Group("/users")
 		{
-			users.GET("", middleware.JWTAuth(), middleware.AdminAuth(), handlers.UserHandler.GetUsers)
 			users.GET("/:id", handlers.UserHandler.GetUserByID)
 			users.PUT("/:id", middleware.JWTAuth(), handlers.UserHandler.UpdateUser)
 		}

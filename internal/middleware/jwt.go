@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"klog-backend/internal/cache"
 	"klog-backend/internal/utils"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// JWTAuth JWT认证中间件
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
@@ -25,16 +27,17 @@ func JWTAuth() gin.HandlerFunc {
 		}
 		token = parts[1]
 
-		claims, err := utils.VerifyToken(token)
-		if err != nil {
-			utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Token无效")
+		// 检查token是否在黑名单中（已登出）
+		isBlacklisted, err := cache.IsInBlacklist(token)
+		if err == nil && isBlacklisted {
+			utils.ResponseError(c, http.StatusUnauthorized, "TOKEN_EXPIRED", "Token已失效")
 			c.Abort()
 			return
 		}
 
-		// 检查用户状态是否为活跃
-		if claims.Status != "active" {
-			utils.ResponseError(c, http.StatusForbidden, "ACCOUNT_INACTIVE", "账号已被禁用")
+		claims, err := utils.VerifyToken(token)
+		if err != nil {
+			utils.ResponseError(c, http.StatusUnauthorized, "UNAUTHORIZED", "Token无效")
 			c.Abort()
 			return
 		}

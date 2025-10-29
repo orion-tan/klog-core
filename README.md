@@ -123,8 +123,9 @@ Authorization: Bearer <your_jwt_token>
 
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
-| POST | /auth/register | 用户注册 | 否 |
+| POST | /auth/register | 用户注册（仅供首次设置管理员） | 否 |
 | POST | /auth/login | 用户登录 | 否 |
+| POST | /auth/logout | 用户登出 | 是 |
 | GET | /auth/me | 获取当前用户信息 | 是 |
 
 #### 文章接口
@@ -142,18 +143,18 @@ Authorization: Bearer <your_jwt_token>
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
 | GET | /categories | 获取所有分类 | 否 |
-| POST | /categories | 创建分类 | 是（管理员）|
-| PUT | /categories/:id | 更新分类 | 是（管理员）|
-| DELETE | /categories/:id | 删除分类 | 是（管理员）|
+| POST | /categories | 创建分类 | 是 |
+| PUT | /categories/:id | 更新分类 | 是 |
+| DELETE | /categories/:id | 删除分类 | 是 |
 
 #### 标签接口
 
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
 | GET | /tags | 获取所有标签 | 否 |
-| POST | /tags | 创建标签 | 是（管理员）|
-| PUT | /tags/:id | 更新标签 | 是（管理员）|
-| DELETE | /tags/:id | 删除标签 | 是（管理员）|
+| POST | /tags | 创建标签 | 是 |
+| PUT | /tags/:id | 更新标签 | 是 |
+| DELETE | /tags/:id | 删除标签 | 是 |
 
 #### 评论接口
 
@@ -161,8 +162,8 @@ Authorization: Bearer <your_jwt_token>
 |------|------|------|------|
 | GET | /posts/:postId/comments | 获取文章评论列表 | 否 |
 | POST | /posts/:postId/comments | 发表评论 | 可选 |
-| PUT | /comments/:id | 更新评论状态 | 是（管理员）|
-| DELETE | /comments/:id | 删除评论 | 是（管理员）|
+| PUT | /comments/:id | 更新评论状态 | 是 |
+| DELETE | /comments/:id | 删除评论 | 是 |
 
 #### 媒体库接口
 
@@ -177,9 +178,8 @@ Authorization: Bearer <your_jwt_token>
 
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
-| GET | /users | 获取用户列表 | 是（管理员）|
 | GET | /users/:id | 获取用户信息 | 否 |
-| PUT | /users/:id | 更新用户信息 | 是 |
+| PUT | /users/:id | 更新用户信息（仅限本人） | 是 |
 
 ### 请求示例
 
@@ -212,14 +212,12 @@ Authorization: Bearer <your_jwt_token>
 
 ## 数据模型
 
-### 用户 (User)
+### 用户 (User) 
 - id: 用户ID
 - username: 用户名
 - email: 邮箱
 - nickname: 昵称
 - avatar_url: 头像URL
-- role: 角色 (author/admin)
-- status: 状态 (active/inactive)
 
 ### 文章 (Post)
 - id: 文章ID
@@ -256,26 +254,30 @@ Authorization: Bearer <your_jwt_token>
 - status: 状态 (pending/approved/spam)
 - parent_id: 父评论ID
 
-### 媒体 (Media)
+### 媒体 (Media) 
 - id: 媒体ID
-- uploader_id: 上传者ID
 - file_name: 文件名
 - file_hash: 文件内容hash
 - file_path: 文件路径
 - mime_type: 文件类型
 - size: 文件大小
 
-## 权限说明
 
-### 角色类型
-- **author**: 普通作者，可以创建和管理自己的文章
-- **admin**: 管理员，拥有所有权限
 
 ### 权限规则
-1. 未登录用户：只能查看已发布的文章、分类、标签、评论
-2. 已登录用户：可以创建文章、发表评论、上传文件
-3. 作者：可以管理自己的文章
-4. 管理员：可以管理所有内容，包括用户、分类、标签等
+1. **未登录用户**：只能查看已发布的文章、分类、标签、评论
+2. **管理员（登录用户）**：拥有所有权限
+   - 创建、编辑、删除文章（包括草稿）
+   - 管理分类、标签
+   - 审核、删除评论
+   - 上传、删除媒体文件
+   - 修改个人信息
+
+### 首次设置流程
+1. 系统初次启动后，数据库中无用户
+2. 访问注册接口 `POST /api/v1/auth/register` 创建管理员账号
+3. 注册成功后，系统将拒绝任何后续注册请求
+4. 使用管理员账号登录即可管理整个博客
 
 ## 开发说明
 
@@ -319,8 +321,6 @@ make docker
 
 #### 场景1：仅后端服务（SQLite）
 
-适合小型项目或开发测试：
-
 ```bash
 docker-compose up -d
 ```
@@ -331,26 +331,16 @@ docker-compose up -d
 
 启用Redis缓存提升性能：
 
-```bash
-docker-compose --profile full up -d redis klog-backend
-```
-
 需要在 `configs/config.toml` 中配置Redis：
 ```toml
 [redis]
-enabled = true
 addr = "klog-redis:6379"
 password = "klog123456"
-db = 0
 ```
 
 #### 场景3：后端 + MySQL
 
 使用MySQL作为主数据库：
-
-```bash
-docker-compose --profile mysql up -d mysql klog-backend
-```
 
 需要在 `configs/config.toml` 中配置MySQL：
 ```toml
@@ -359,56 +349,10 @@ type = "mysql"
 url = "klog:klogpassword@tcp(klog-mysql:3306)/klog?charset=utf8mb4&parseTime=True&loc=Local"
 ```
 
-#### 场景4：完整服务栈
 
-包含后端、Redis、MySQL和Nginx反向代理：
 
-```bash
-# 1. 创建nginx配置目录
-mkdir -p nginx/conf.d nginx/ssl nginx/logs
 
-# 2. 创建nginx配置文件（参考下方配置示例）
-# 编辑 nginx/nginx.conf
 
-# 3. 启动所有服务
-docker-compose --profile full up -d
-
-# 4. 查看服务状态
-docker-compose ps
-```
-
-访问：
-- API: `http://localhost:8010`（直接访问）
-- Nginx: `http://localhost` 或 `http://localhost:80`（通过代理访问）
-
-### 环境变量配置
-
-可以通过环境变量覆盖默认配置。创建 `.env` 文件：
-
-```bash
-# 服务端口配置
-SERVER_PORT=8010
-NGINX_HTTP_PORT=80
-NGINX_HTTPS_PORT=443
-REDIS_PORT=6379
-MYSQL_PORT=3306
-
-# Gin运行模式
-GIN_MODE=release
-
-# 构建信息
-VERSION=v1.0.0
-BUILD_TIME=2025-10-29T00:00:00Z
-
-# MySQL配置
-MYSQL_ROOT_PASSWORD=your_strong_root_password
-MYSQL_DATABASE=klog
-MYSQL_USER=klog
-MYSQL_PASSWORD=your_strong_password
-
-# Redis配置
-REDIS_PASSWORD=your_redis_password
-```
 
 ### 健康检查
 
@@ -544,211 +488,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-```
-
-### 常用Docker命令
-
-```bash
-# 启动服务
-docker-compose up -d
-
-# 重启服务
-docker-compose restart klog-backend
-
-# 停止服务
-docker-compose stop
-
-# 停止并删除容器
-docker-compose down
-
-# 重新构建并启动
-docker-compose up -d --build
-
-# 进入容器
-docker exec -it klog-backend sh
-
-# 查看容器资源使用
-docker stats klog-backend
-
-# 清理未使用的镜像和容器
-docker system prune -a
-```
-
-## 生产环境部署
-
-### 部署前检查清单
-
-- [ ] 修改JWT密钥为强随机密码
-- [ ] 修改数据库密码（如使用MySQL）
-- [ ] 修改Redis密码
-- [ ] 配置HTTPS证书
-- [ ] 设置合理的日志轮转策略
-- [ ] 配置防火墙规则
-- [ ] 设置资源限制（CPU、内存）
-- [ ] 配置定期数据备份
-- [ ] 启用监控和告警
-
-### 方式一：Docker Compose部署（推荐）
-
-```bash
-# 1. 克隆代码
-git clone <repository-url>
-cd klog/backend
-
-# 2. 配置环境变量
-cp .env.example .env
-vim .env  # 修改敏感信息
-
-# 3. 修改配置文件
-vim configs/config.toml
-
-# 4. 启动服务
-docker-compose --profile full up -d
-
-# 5. 验证服务
-curl http://localhost:8010/health
-```
-
-### 方式二：传统部署
-
-#### 1. 修改配置
-
-编辑 `configs/config.toml`，修改为生产环境配置。
-
-#### 2. 编译
-
-```bash
-make build-linux
-# 或
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o klog-backend cmd/main.go
-```
-
-#### 3. 使用Systemd管理
-
-创建 `/etc/systemd/system/klog-backend.service`:
-
-```ini
-[Unit]
-Description=KLog Backend Service
-After=network.target mysql.service
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/klog-backend
-ExecStart=/opt/klog-backend/klog-backend
-Restart=on-failure
-RestartSec=5s
-
-# 资源限制
-LimitNOFILE=65535
-LimitNPROC=4096
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启动服务：
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable klog-backend
-sudo systemctl start klog-backend
-sudo systemctl status klog-backend
-```
-
-#### 4. Nginx反向代理
-
-参考上方Nginx配置示例，配置反向代理和HTTPS。
-
-### 性能优化建议
-
-1. **数据库优化**
-   - 生产环境使用MySQL或PostgreSQL
-   - 配置数据库连接池
-   - 添加必要的索引
-
-2. **启用Redis缓存**
-   - 缓存热点数据
-   - 减少数据库查询
-
-3. **静态资源**
-   - 使用CDN加速上传的媒体文件
-   - 启用Nginx gzip压缩
-
-4. **负载均衡**
-   - 多实例部署
-   - 使用Nginx或云负载均衡器
-
-5. **监控**
-   - 配置应用性能监控（APM）
-   - 设置日志收集和分析
-   - 配置告警规则
-
-### 安全建议
-
-1. **网络安全**
-   - 使用HTTPS（配置SSL证书）
-   - 配置防火墙，只开放必要端口
-   - 使用安全的密码和密钥
-
-2. **应用安全**
-   - 定期更新依赖包
-   - 启用CORS限制
-   - 配置请求速率限制
-   - 验证和过滤用户输入
-
-3. **数据安全**
-   - 定期备份数据库
-   - 加密敏感信息
-   - 配置数据库访问权限
-
-### Kubernetes部署（可选）
-
-如需要部署到Kubernetes，可参考以下配置：
-
-```yaml
-# deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: klog-backend
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: klog-backend
-  template:
-    metadata:
-      labels:
-        app: klog-backend
-    spec:
-      containers:
-      - name: klog-backend
-        image: klog-backend:latest
-        ports:
-        - containerPort: 8010
-        env:
-        - name: GIN_MODE
-          value: "release"
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 8010
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 8010
-          initialDelaySeconds: 5
-          periodSeconds: 5
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
 ```
 
 ## 许可证

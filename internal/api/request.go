@@ -14,6 +14,17 @@ type UserLoginRequest struct {
 	Password string `json:"password" binding:"required,min=8,max=30"`
 }
 
+// UserUpdateRequest 更新用户请求
+type UserUpdateRequest struct {
+	Nickname    *string `json:"nickname,omitempty"`
+	Username    *string `json:"username,omitempty"`
+	AvatarURL   *string `json:"avatar_url,omitempty"`
+	Bio         *string `json:"bio,omitempty"`
+	Email       *string `json:"email,omitempty"`
+	OldPassword *string `json:"old_password,omitempty"`
+	NewPassword *string `json:"new_password,omitempty"`
+}
+
 // PostCreateRequest 创建文章请求
 type PostCreateRequest struct {
 	CategoryID    *uint    `json:"category_id"`
@@ -28,14 +39,14 @@ type PostCreateRequest struct {
 
 // PostUpdateRequest 更新文章请求
 type PostUpdateRequest struct {
-	CategoryID    *uint    `json:"category_id"`
-	Title         string   `json:"title"`
-	Slug          string   `json:"slug"`
-	Content       string   `json:"content"`
-	Excerpt       string   `json:"excerpt"`
-	CoverImageURL string   `json:"cover_image_url"`
-	Status        string   `json:"status" binding:"omitempty,oneof=draft published archived"`
-	Tags          []string `json:"tags"`
+	CategoryID    *uint     `json:"category_id,omitempty"`
+	Title         *string   `json:"title,omitempty"`
+	Slug          *string   `json:"slug,omitempty"`
+	Content       *string   `json:"content,omitempty"`
+	Excerpt       *string   `json:"excerpt,omitempty"`
+	CoverImageURL *string   `json:"cover_image_url,omitempty"`
+	Status        *string   `json:"status" binding:"omitempty,oneof=draft published archived"`
+	Tags          *[]string `json:"tags,omitempty"`
 }
 
 // CategoryCreateRequest 创建分类请求
@@ -47,9 +58,9 @@ type CategoryCreateRequest struct {
 
 // CategoryUpdateRequest 更新分类请求
 type CategoryUpdateRequest struct {
-	Name        string `json:"name"`
-	Slug        string `json:"slug"`
-	Description string `json:"description"`
+	Name        *string `json:"name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 // TagCreateRequest 创建标签请求
@@ -60,8 +71,8 @@ type TagCreateRequest struct {
 
 // TagUpdateRequest 更新标签请求
 type TagUpdateRequest struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	Name *string `json:"name,omitempty"`
+	Slug *string `json:"slug,omitempty"`
 }
 
 // CommentCreateRequest 创建评论请求
@@ -75,11 +86,4 @@ type CommentCreateRequest struct {
 // CommentUpdateRequest 更新评论请求
 type CommentUpdateRequest struct {
 	Status string `json:"status" binding:"required,oneof=pending approved spam"`
-}
-
-// UserUpdateRequest 更新用户请求
-type UserUpdateRequest struct {
-	Nickname  string `json:"nickname"`
-	AvatarURL string `json:"avatar_url"`
-	Status    string `json:"status" binding:"omitempty,oneof=active inactive"`
 }
