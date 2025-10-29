@@ -1,4 +1,4 @@
-.PHONY: build run clean test dev help
+.PHONY: build run clean dev help
 
 # 变量定义
 BINARY_NAME=klog-backend
@@ -37,17 +37,13 @@ dev:
 	@echo "开发模式启动..."
 	$(GO) run ./cmd/main.go
 
-## test: 运行测试
-test:
-	@echo "运行测试..."
-	$(GO) test -v ./...
-
 ## clean: 清理编译文件
 clean:
 	@echo "清理编译文件..."
 	@rm -f $(BINARY_NAME)
 	@rm -rf ./db/*.db
 	@rm -rf ./uploads/*
+	@rm -rf ./log/*
 	@echo "清理完成"
 
 ## deps: 安装依赖

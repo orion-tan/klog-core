@@ -1,3 +1,5 @@
+> 项目目前处于激进开发阶段，绝不能用于生产环境！！！
+
 # KLog 博客系统后端 API
 
 这是一个完整的博客系统后端API，基于Go语言和Gin框架开发。
@@ -7,8 +9,11 @@
 - **Web框架**: Gin
 - **ORM**: GORM
 - **数据库**: SQLite (可轻松切换到MySQL/PostgreSQL)
-- **认证**: JWT
+- **认证**: JWT (golang-jwt/jwt/v5)
 - **密码加密**: bcrypt
+- **缓存**: Redis（可选）
+- **日志**: Zap + Lumberjack（日志轮转）
+- **配置管理**: Viper
 
 ## 项目结构
 
@@ -20,6 +25,7 @@ backend/
 │   └── config.toml
 ├── internal/               # 内部代码
 │   ├── api/                # API请求/响应结构
+│   ├── cache               # redis cache
 │   ├── config/             # 配置管理
 │   ├── database/           # 数据库迁移
 │   ├── handler/            # 请求处理器（Controller）
@@ -29,20 +35,28 @@ backend/
 │   ├── router/             # 路由配置
 │   ├── services/           # 业务逻辑层
 │   └── utils/              # 工具函数
-└── uploads/                # 上传文件存储目录（自动创建）
+├── log/                    # 日志目录（默认位置）
+├── db/                     # 数据库目录（默认位置）
+└── uploads/                # 上传文件存储目录（默认位置）
 ```
 
 ## 快速开始
 
-### 1. 安装依赖
+### 方式一：Docker Compose（推荐）
+
+`todo...` 
+
+### 方式二：本地开发
+
+#### 1. 安装依赖
 
 ```bash
 go mod tidy
 ```
 
-### 2. 配置
+#### 2. 配置
 
-编辑 `configs/config.toml` 文件：
+编辑 `configs/config.toml`(详细字段参考 `internal/config/config.go`) 文件：
 
 ```toml
 [server]
@@ -53,21 +67,37 @@ type = "sqlite"
 url = "./db/klog.db"
 
 [jwt]
-secret = "your-very-secret-key"  # 请修改为强密码
+secret = "your-very-secret-key"  # 请修改为强密码(不低于32位)
 expire_hour = 72
+
+[redis]
+addr = "localhost:6379"
+password = ""
 ```
 
-### 3. 运行
+#### 3. 运行
 
+开发模式：
 ```bash
+make dev
+# 或
 go run cmd/main.go
 ```
 
-或编译后运行：
-
+编译后运行：
 ```bash
-go build -o klog-backend cmd/main.go
+make build
 ./klog-backend
+```
+
+使用Makefile命令：
+```bash
+make help        # 查看所有可用命令
+make build       # 编译应用程序
+make run         # 编译并运行
+make test        # 运行测试
+make clean       # 清理编译文件
+make docker      # 构建Docker镜像
 ```
 
 服务器将在 `http://localhost:8010` 启动。
@@ -141,7 +171,7 @@ Authorization: Bearer <your_jwt_token>
 | POST | /media/upload | 上传文件 | 是 |
 | GET | /media | 获取媒体列表 | 是 |
 | DELETE | /media/:id | 删除媒体文件 | 是 |
-| GET | /uploads/:filename | 访问上传的文件 | 否 |
+| GET | /media/i/:filename | 访问上传的文件 | 否 |
 
 #### 用户接口
 
@@ -153,54 +183,7 @@ Authorization: Bearer <your_jwt_token>
 
 ### 请求示例
 
-#### 用户注册
-
-```bash
-curl -X POST http://localhost:8010/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "testuser",
-    "email": "test@example.com",
-    "password": "password123",
-    "nickname": "Test User"
-  }'
-```
-
-#### 用户登录
-
-```bash
-curl -X POST http://localhost:8010/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "login": "testuser",
-    "password": "password123"
-  }'
-```
-
-#### 创建文章
-
-```bash
-curl -X POST http://localhost:8010/api/v1/posts \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your_token>" \
-  -d '{
-    "title": "My First Post",
-    "slug": "my-first-post",
-    "content": "This is my first blog post!",
-    "excerpt": "A brief summary",
-    "status": "published",
-    "category_id": 1,
-    "tags": ["tech", "golang"]
-  }'
-```
-
-#### 上传文件（multipart）
-
-```bash
-curl -X POST http://localhost:8010/api/v1/media/upload \
-  -H "Authorization: Bearer <your_token>" \
-  -F "file=@/path/to/your/image.jpg"
-```
+`todo ...` 
 
 ### 响应格式
 
@@ -277,6 +260,7 @@ curl -X POST http://localhost:8010/api/v1/media/upload \
 - id: 媒体ID
 - uploader_id: 上传者ID
 - file_name: 文件名
+- file_hash: 文件内容hash
 - file_path: 文件路径
 - mime_type: 文件类型
 - size: 文件大小
@@ -311,70 +295,461 @@ curl -X POST http://localhost:8010/api/v1/media/upload \
 
 应用使用Gin默认的日志中间件，所有请求都会被记录。
 
-## 生产环境部署
+## Docker 部署说明
 
-### 1. 修改配置
-
-- 修改JWT密钥为强密码
-- 如果使用MySQL/PostgreSQL，修改数据库配置
-- 考虑使用环境变量存储敏感信息
-
-### 2. 编译
+### Docker镜像构建
 
 ```bash
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o klog-backend cmd/main.go
+# 基础构建
+docker build -t klog-backend:latest .
+
+# 带版本信息构建
+docker build \
+  --build-arg VERSION=v1.0.0 \
+  --build-arg BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+  -t klog-backend:v1.0.0 .
+
+# 使用Makefile构建
+make docker
 ```
 
-### 3. 运行
+### Docker Compose 配置
+
+项目提供了灵活的 Docker Compose 配置，支持多种部署场景。
+
+#### 场景1：仅后端服务（SQLite）
+
+适合小型项目或开发测试：
 
 ```bash
-./klog-backend
+docker-compose up -d
 ```
 
-### 4. 使用进程管理器
+服务访问：`http://localhost:8010`
 
-推荐使用 systemd 或 supervisord 管理进程。
+#### 场景2：后端 + Redis
 
-### 5. 反向代理
+启用Redis缓存提升性能：
 
-使用 Nginx 作为反向代理：
+```bash
+docker-compose --profile full up -d redis klog-backend
+```
+
+需要在 `configs/config.toml` 中配置Redis：
+```toml
+[redis]
+enabled = true
+addr = "klog-redis:6379"
+password = "klog123456"
+db = 0
+```
+
+#### 场景3：后端 + MySQL
+
+使用MySQL作为主数据库：
+
+```bash
+docker-compose --profile mysql up -d mysql klog-backend
+```
+
+需要在 `configs/config.toml` 中配置MySQL：
+```toml
+[database]
+type = "mysql"
+url = "klog:klogpassword@tcp(klog-mysql:3306)/klog?charset=utf8mb4&parseTime=True&loc=Local"
+```
+
+#### 场景4：完整服务栈
+
+包含后端、Redis、MySQL和Nginx反向代理：
+
+```bash
+# 1. 创建nginx配置目录
+mkdir -p nginx/conf.d nginx/ssl nginx/logs
+
+# 2. 创建nginx配置文件（参考下方配置示例）
+# 编辑 nginx/nginx.conf
+
+# 3. 启动所有服务
+docker-compose --profile full up -d
+
+# 4. 查看服务状态
+docker-compose ps
+```
+
+访问：
+- API: `http://localhost:8010`（直接访问）
+- Nginx: `http://localhost` 或 `http://localhost:80`（通过代理访问）
+
+### 环境变量配置
+
+可以通过环境变量覆盖默认配置。创建 `.env` 文件：
+
+```bash
+# 服务端口配置
+SERVER_PORT=8010
+NGINX_HTTP_PORT=80
+NGINX_HTTPS_PORT=443
+REDIS_PORT=6379
+MYSQL_PORT=3306
+
+# Gin运行模式
+GIN_MODE=release
+
+# 构建信息
+VERSION=v1.0.0
+BUILD_TIME=2025-10-29T00:00:00Z
+
+# MySQL配置
+MYSQL_ROOT_PASSWORD=your_strong_root_password
+MYSQL_DATABASE=klog
+MYSQL_USER=klog
+MYSQL_PASSWORD=your_strong_password
+
+# Redis配置
+REDIS_PASSWORD=your_redis_password
+```
+
+### 健康检查
+
+所有服务都配置了健康检查：
+
+```bash
+# 查看容器健康状态
+docker-compose ps
+
+# 手动健康检查
+curl http://localhost:8010/health
+curl http://localhost:8010/health/live
+curl http://localhost:8010/health/ready
+curl http://localhost:8010/metrics
+```
+
+健康检查端点说明：
+- `/health` - 完整健康检查（包含数据库和Redis）
+- `/health/live` - 存活检查（用于Docker和K8s liveness probe）
+- `/health/ready` - 就绪检查（用于K8s readiness probe）
+- `/metrics` - 应用指标（内存、goroutine、数据库连接池等）
+
+### 数据持久化
+
+Docker Compose配置了以下数据卷：
+
+```bash
+# 查看数据卷
+docker volume ls | grep klog
+
+# 数据备份（示例：SQLite）
+docker cp klog-backend:/app/db ./backup/
+
+# 数据恢复
+docker cp ./backup/db klog-backend:/app/
+
+# MySQL数据备份
+docker exec klog-mysql mysqldump -u root -p'rootpassword' klog > backup.sql
+
+# MySQL数据恢复
+docker exec -i klog-mysql mysql -u root -p'rootpassword' klog < backup.sql
+```
+
+### 日志管理
+
+```bash
+# 查看实时日志
+docker-compose logs -f klog-backend
+
+# 查看最近100行日志
+docker-compose logs --tail=100 klog-backend
+
+# 查看所有服务日志
+docker-compose logs -f
+
+# 应用内日志文件位置
+./logs/app.log
+```
+
+### Nginx反向代理配置示例
+
+创建 `nginx/nginx.conf`:
 
 ```nginx
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    keepalive_timeout 65;
+    gzip on;
+
+    include /etc/nginx/conf.d/*.conf;
+}
+```
+
+创建 `nginx/conf.d/klog.conf`:
+
+```nginx
+upstream klog_backend {
+    server klog-backend:8010;
+}
+
 server {
     listen 80;
-    server_name your-domain.com;
+    server_name localhost;
+    client_max_body_size 30M;
 
-    location / {
-        proxy_pass http://localhost:8010;
+    # 健康检查
+    location /health {
+        proxy_pass http://klog_backend;
+        access_log off;
+    }
+
+    # API代理
+    location /api/ {
+        proxy_pass http://klog_backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # 静态文件（上传的文件）
     location /uploads/ {
-        alias /path/to/backend/uploads/;
+        alias /usr/share/nginx/html/uploads/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # 其他路径转发到后端
+    location / {
+        proxy_pass http://klog_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-## 常见问题
+### 常用Docker命令
 
-### 1. 数据库文件在哪里？
+```bash
+# 启动服务
+docker-compose up -d
 
-SQLite数据库文件默认存储在 `./db/klog.db`
+# 重启服务
+docker-compose restart klog-backend
 
-### 2. 上传的文件存储在哪里？
+# 停止服务
+docker-compose stop
 
-上传的文件存储在 `./uploads/` 目录
+# 停止并删除容器
+docker-compose down
 
-### 3. 如何创建管理员账户？
+# 重新构建并启动
+docker-compose up -d --build
 
-第一个注册的用户需要手动在数据库中将 role 修改为 'admin'
+# 进入容器
+docker exec -it klog-backend sh
 
-### 4. 如何切换到MySQL/PostgreSQL？
+# 查看容器资源使用
+docker stats klog-backend
 
-1. 修改 `configs/config.toml` 中的数据库配置
-2. 在 `cmd/main.go` 中修改数据库驱动
+# 清理未使用的镜像和容器
+docker system prune -a
+```
+
+## 生产环境部署
+
+### 部署前检查清单
+
+- [ ] 修改JWT密钥为强随机密码
+- [ ] 修改数据库密码（如使用MySQL）
+- [ ] 修改Redis密码
+- [ ] 配置HTTPS证书
+- [ ] 设置合理的日志轮转策略
+- [ ] 配置防火墙规则
+- [ ] 设置资源限制（CPU、内存）
+- [ ] 配置定期数据备份
+- [ ] 启用监控和告警
+
+### 方式一：Docker Compose部署（推荐）
+
+```bash
+# 1. 克隆代码
+git clone <repository-url>
+cd klog/backend
+
+# 2. 配置环境变量
+cp .env.example .env
+vim .env  # 修改敏感信息
+
+# 3. 修改配置文件
+vim configs/config.toml
+
+# 4. 启动服务
+docker-compose --profile full up -d
+
+# 5. 验证服务
+curl http://localhost:8010/health
+```
+
+### 方式二：传统部署
+
+#### 1. 修改配置
+
+编辑 `configs/config.toml`，修改为生产环境配置。
+
+#### 2. 编译
+
+```bash
+make build-linux
+# 或
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o klog-backend cmd/main.go
+```
+
+#### 3. 使用Systemd管理
+
+创建 `/etc/systemd/system/klog-backend.service`:
+
+```ini
+[Unit]
+Description=KLog Backend Service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/klog-backend
+ExecStart=/opt/klog-backend/klog-backend
+Restart=on-failure
+RestartSec=5s
+
+# 资源限制
+LimitNOFILE=65535
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动服务：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable klog-backend
+sudo systemctl start klog-backend
+sudo systemctl status klog-backend
+```
+
+#### 4. Nginx反向代理
+
+参考上方Nginx配置示例，配置反向代理和HTTPS。
+
+### 性能优化建议
+
+1. **数据库优化**
+   - 生产环境使用MySQL或PostgreSQL
+   - 配置数据库连接池
+   - 添加必要的索引
+
+2. **启用Redis缓存**
+   - 缓存热点数据
+   - 减少数据库查询
+
+3. **静态资源**
+   - 使用CDN加速上传的媒体文件
+   - 启用Nginx gzip压缩
+
+4. **负载均衡**
+   - 多实例部署
+   - 使用Nginx或云负载均衡器
+
+5. **监控**
+   - 配置应用性能监控（APM）
+   - 设置日志收集和分析
+   - 配置告警规则
+
+### 安全建议
+
+1. **网络安全**
+   - 使用HTTPS（配置SSL证书）
+   - 配置防火墙，只开放必要端口
+   - 使用安全的密码和密钥
+
+2. **应用安全**
+   - 定期更新依赖包
+   - 启用CORS限制
+   - 配置请求速率限制
+   - 验证和过滤用户输入
+
+3. **数据安全**
+   - 定期备份数据库
+   - 加密敏感信息
+   - 配置数据库访问权限
+
+### Kubernetes部署（可选）
+
+如需要部署到Kubernetes，可参考以下配置：
+
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: klog-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: klog-backend
+  template:
+    metadata:
+      labels:
+        app: klog-backend
+    spec:
+      containers:
+      - name: klog-backend
+        image: klog-backend:latest
+        ports:
+        - containerPort: 8010
+        env:
+        - name: GIN_MODE
+          value: "release"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8010
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8010
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+```
 
 ## 许可证
 
