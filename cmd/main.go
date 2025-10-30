@@ -8,8 +8,10 @@ import (
 	"klog-backend/internal/database"
 	"klog-backend/internal/handler"
 	"klog-backend/internal/middleware"
+	"klog-backend/internal/queue"
 	"klog-backend/internal/repository"
 	"klog-backend/internal/router"
+	"klog-backend/internal/scheduler"
 	"klog-backend/internal/services"
 	"klog-backend/internal/utils"
 	"net/http"
@@ -41,6 +43,16 @@ func main() {
 	// 启动评论限流清理协程
 	go middleware.CleanupCommentLimiter()
 
+	// 初始化文件删除队列
+	fileQueue := queue.NewFileQueue()
+
+	// 创建用于管理后台任务的context
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+
+	// 启动文件删除队列消费者
+	fileQueue.StartConsumer(bgCtx)
+
 	// 初始化数据库
 	db, err := gorm.Open(sqlite.Open(config.Cfg.Database.Url), &gorm.Config{})
 	if err != nil {
@@ -69,7 +81,7 @@ func main() {
 	categoryService := services.NewCategoryService(categoryRepo, postRepo)
 	tagService := services.NewTagService(tagRepo, postRepo)
 	commentService := services.NewCommentService(commentRepo, postRepo)
-	mediaService := services.NewMediaService(mediaRepo)
+	mediaService := services.NewMediaService(mediaRepo, fileQueue)
 	userService := services.NewUserService(userRepo)
 
 	// 初始化处理器层
@@ -96,6 +108,12 @@ func main() {
 
 	r := router.SetupRouter(handlers)
 
+	// 初始化定时任务调度器
+	cleanupTask := scheduler.NewCleanupTask(mediaRepo)
+	taskScheduler := scheduler.NewScheduler(cleanupTask)
+	taskScheduler.Start()
+	defer taskScheduler.Stop()
+
 	// 创建 HTTP 服务器
 	addr := fmt.Sprintf(":%d", config.Cfg.Server.Port)
 	srv := &http.Server{
@@ -119,6 +137,9 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	utils.SugarLogger.Info("正在关闭服务器...")
+
+	// 停止后台任务
+	bgCancel() // 通知所有后台goroutine停止
 
 	// 设置 5 秒的超时时间用于处理现有请求
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

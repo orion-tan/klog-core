@@ -56,6 +56,13 @@ type Config struct {
 		// JWT过期时间（小时）
 		ExpireHour int `mapstructure:"expire_hour"`
 	} `mapstructure:"jwt"`
+	// 调度器配置
+	Scheduler struct {
+		// 是否启用定时任务
+		Enabled bool `mapstructure:"enabled"`
+		// 清理任务的Cron表达式
+		CleanupCron string `mapstructure:"cleanup_cron"`
+	} `mapstructure:"scheduler"`
 }
 
 var Cfg *Config
@@ -104,6 +111,10 @@ func setDefaults() {
 
 	// JWT 默认配置
 	viper.SetDefault("jwt.expire_hour", 168) // 7天
+
+	// 调度器默认配置
+	viper.SetDefault("scheduler.enabled", true)
+	viper.SetDefault("scheduler.cleanup_cron", "0 0 3 * * 0") // 每周日凌晨3点
 }
 
 // validateConfig 验证配置的有效性

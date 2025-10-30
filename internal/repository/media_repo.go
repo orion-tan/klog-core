@@ -90,3 +90,14 @@ func (r *MediaRepository) DeleteMedia(mediaID uint) error {
 func (r *MediaRepository) DeleteMediaInTx(tx *gorm.DB, mediaID uint) error {
 	return tx.Delete(&model.Media{}, mediaID).Error
 }
+
+// GetAllFilePaths 获取所有媒体文件路径
+// @return 文件路径列表, 错误
+func (r *MediaRepository) GetAllFilePaths() ([]string, error) {
+	var filePaths []string
+	err := r.DB.Model(&model.Media{}).Pluck("file_path", &filePaths).Error
+	if err != nil {
+		return nil, err
+	}
+	return filePaths, nil
+}

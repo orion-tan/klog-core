@@ -9,6 +9,7 @@ import (
 	"io"
 	"klog-backend/internal/config"
 	"klog-backend/internal/model"
+	"klog-backend/internal/queue"
 	"klog-backend/internal/repository"
 	"klog-backend/internal/utils"
 	"os"
@@ -57,10 +58,14 @@ type FileData struct {
 
 type MediaService struct {
 	mediaRepo *repository.MediaRepository
+	fileQueue *queue.FileQueue
 }
 
-func NewMediaService(mediaRepo *repository.MediaRepository) *MediaService {
-	return &MediaService{mediaRepo: mediaRepo}
+func NewMediaService(mediaRepo *repository.MediaRepository, fileQueue *queue.FileQueue) *MediaService {
+	return &MediaService{
+		mediaRepo: mediaRepo,
+		fileQueue: fileQueue,
+	}
 }
 
 // SaveMediaFile 保存媒体文件（包括物理文件和数据库记录）
@@ -315,7 +320,6 @@ func (s *MediaService) GetMediaList(page, limit int) ([]model.Media, int64, erro
 // @mediaID 媒体文件ID
 // @return 错误
 func (s *MediaService) DeleteMediaWithFile(mediaID uint) error {
-	// 获取媒体信息
 	media, err := s.mediaRepo.GetMediaByID(mediaID)
 	if err != nil {
 		// 精确判断错误类型
@@ -325,21 +329,15 @@ func (s *MediaService) DeleteMediaWithFile(mediaID uint) error {
 		return fmt.Errorf("查询媒体文件失败: %w", err)
 	}
 
-	// 先删除物理文件
-	filePath := filepath.Join(config.Cfg.Media.MediaDir, media.FilePath)
-	if err := os.Remove(filePath); err != nil {
-		// 如果文件不存在，只记录警告，继续删除数据库记录
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("删除物理文件失败: %v", err)
-		}
-		utils.SugarLogger.Warnf("物理文件不存在，仅删除数据库记录: %s", filePath)
+	if err := s.mediaRepo.DeleteMedia(mediaID); err != nil {
+		return fmt.Errorf("删除数据库记录失败: %v", err)
 	}
 
-	// 再删除数据库记录
-	if err := s.mediaRepo.DeleteMedia(mediaID); err != nil {
-		// 物理文件已删除但数据库删除失败，记录错误但不能回滚文件删除
-		utils.SugarLogger.Errorf("删除数据库记录失败（物理文件已删除）: %v", err)
-		return fmt.Errorf("删除数据库记录失败: %v", err)
+	// 异步删除物理文件（提交到消息队列处理）
+	filePath := filepath.Join(config.Cfg.Media.MediaDir, media.FilePath)
+	if err := s.fileQueue.PublishDeleteTask(filePath); err != nil {
+		// 提交失败记录日志，定时清理任务会处理孤儿文件
+		utils.SugarLogger.Warnf("提交文件删除任务失败: %s, 错误: %v", filePath, err)
 	}
 
 	return nil

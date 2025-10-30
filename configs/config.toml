@@ -21,3 +21,7 @@ password = ""
 [jwt]
 secret = "ahsucjshzgsfshaysudkxhsuzksgdoqlschu"
 expire_hour = 72
+
+[scheduler]
+enabled = true
+cleanup_cron = "0 0 3 * * 0"  # 每周日凌晨3点执行清理任务
