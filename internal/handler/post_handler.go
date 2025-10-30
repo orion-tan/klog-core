@@ -71,33 +71,20 @@ func (h *PostHandler) GetPosts(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	status := c.Query("status")
-	authorIDStr := c.Query("author")
 	categorySlug := c.Query("category")
 	tagSlug := c.Query("tag")
 	sortBy := c.DefaultQuery("sortBy", "published_at")
 	order := c.DefaultQuery("order", "desc")
 	detail, _ := strconv.Atoi(c.DefaultQuery("detail", "0"))
 
-	// 如果用户已认证，可以查看自己的所有文章
-	var authorID *uint
-	var uid uint
-	if authorIDStr != "" {
-		id, err := strconv.ParseUint(authorIDStr, 10, 32)
-		if err == nil {
-			uid = uint(id)
-			authorID = &uid
-		}
-	}
-
 	// 检查权限
 	_, exists := c.Get("claims")
 	if !exists {
 		// 未认证用户只能看到已发布的文章
 		status = "published"
-		authorID = nil
 	}
 
-	posts, total, err := h.postService.GetPosts(page, limit, status, categorySlug, tagSlug, sortBy, order, authorID)
+	posts, total, err := h.postService.GetPosts(page, limit, status, categorySlug, tagSlug, sortBy, order)
 	if err != nil {
 		utils.ResponseError(c, http.StatusInternalServerError, "GET_POSTS_FAILED", err.Error())
 		return

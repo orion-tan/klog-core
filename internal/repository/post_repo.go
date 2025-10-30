@@ -93,7 +93,7 @@ func (r *PostRepository) GetPostBySlug(slug string, preload bool) (*model.Post, 
 // @sortBy 排序字段
 // @order 排序方式
 // @return 文章列表, 总数, 错误
-func (r *PostRepository) GetPosts(page, limit int, status, categorySlug, tagSlug, sortBy, order string, authorID *uint) ([]model.Post, int64, error) {
+func (r *PostRepository) GetPosts(page, limit int, status, categorySlug, tagSlug, sortBy, order string) ([]model.Post, int64, error) {
 	var posts []model.Post
 	var total int64
 
@@ -102,9 +102,6 @@ func (r *PostRepository) GetPosts(page, limit int, status, categorySlug, tagSlug
 	// 筛选条件
 	if status != "" {
 		query = query.Where("status = ?", status)
-	}
-	if authorID != nil {
-		query = query.Where("author_id = ?", *authorID)
 	}
 	if categorySlug != "" {
 		query = query.Joins("JOIN categories ON categories.id = posts.category_id").

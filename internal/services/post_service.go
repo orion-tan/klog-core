@@ -133,8 +133,8 @@ func (s *PostService) GetPostByID(postID uint) (*model.Post, error) {
 // @sortBy 排序字段
 // @order 排序方式
 // @return 文章列表, 总数, 错误
-func (s *PostService) GetPosts(page, limit int, status, categorySlug, tagSlug, sortBy, order string, authorID *uint) ([]model.Post, int64, error) {
-	return s.postRepo.GetPosts(page, limit, status, categorySlug, tagSlug, sortBy, order, authorID)
+func (s *PostService) GetPosts(page, limit int, status, categorySlug, tagSlug, sortBy, order string) ([]model.Post, int64, error) {
+	return s.postRepo.GetPosts(page, limit, status, categorySlug, tagSlug, sortBy, order)
 }
 
 // UpdatePost 更新文章
