@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gabriel-vasile/mimetype"
 	"gorm.io/gorm"
 )
 
@@ -141,9 +142,18 @@ func (s *MediaService) validateFile(fileData *FileData) error {
 	}
 
 	// 二次验证：检测文件实际内容的 MIME 类型（防止伪造）
-	detectedMimeType := s.detectMimeType(fileData.FileBytes)
-	if !AllowedMimeTypes[detectedMimeType] {
-		return fmt.Errorf("%w: 检测到的文件类型为 %s，不允许上传", ErrInvalidFileType, detectedMimeType)
+	// 针对流式上传检测
+	if fileData.Reader != nil {
+		detectedMimeType, fullReader := s.detectMimeTypeByReader(fileData.Reader)
+		fileData.Reader = fullReader
+		if !AllowedMimeTypes[detectedMimeType] {
+			return fmt.Errorf("%w: 检测到的文件类型为 %s，不允许上传", ErrInvalidFileType, detectedMimeType)
+		}
+	} else {
+		detectedMimeType := s.detectMimeType(fileData.FileBytes)
+		if !AllowedMimeTypes[detectedMimeType] {
+			return fmt.Errorf("%w: 检测到的文件类型为 %s，不允许上传", ErrInvalidFileType, detectedMimeType)
+		}
 	}
 
 	return nil
@@ -153,67 +163,23 @@ func (s *MediaService) validateFile(fileData *FileData) error {
 // @fileBytes 文件字节流
 // @return MIME 类型
 func (s *MediaService) detectMimeType(fileBytes []byte) string {
-	// 使用标准库检测文件类型（基于文件头魔数）
-	// 最多读取前 512 字节
-	if len(fileBytes) > 512 {
-		return detectContentType(fileBytes[:512])
-	}
-	return detectContentType(fileBytes)
+	mime := mimetype.Detect(fileBytes)
+	return mime.String()
 }
 
-// detectContentType 辅助函数：检测内容类型
-// @data 文件数据
+// detectMimeType 检测文件实际的 MIME 类型
+// @fileReader 文件读取器
 // @return MIME 类型
-func detectContentType(data []byte) string {
-	// 检查常见图片格式的魔数
-	if len(data) >= 2 {
-		// JPEG: FF D8 FF
-		if data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
-			return "image/jpeg"
-		}
-		// PNG: 89 50 4E 47
-		if len(data) >= 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
-			return "image/png"
-		}
-		// GIF: 47 49 46
-		if len(data) >= 3 && data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 {
-			return "image/gif"
-		}
-		// WebP: 52 49 46 46 ... 57 45 42 50
-		if len(data) >= 12 && data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
-			data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50 {
-			return "image/webp"
-		}
+func (s *MediaService) detectMimeTypeByReader(fileReader io.Reader) (string, io.Reader) {
+	header := make([]byte, 1024)
+	n, err := io.ReadFull(fileReader, header)
+	// 如果文件本身小于512字节，io.ReadFull会返回ErrUnexpectedEOF
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return "", fileReader
 	}
-
-	// SVG 是 XML 格式，检查文本内容
-	if len(data) >= 5 {
-		content := string(data[:min(len(data), 1024)])
-		if strings.Contains(content, "<svg") || strings.Contains(content, "<?xml") {
-			return "image/svg+xml"
-		}
-	}
-
-	return "application/octet-stream"
-}
-
-// min 辅助函数：返回两个整数中的较小值
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// calculateFileHash 计算文件哈希值（使用 SHA-256）
-// @fileBytes 文件字节流
-// @return 文件哈希, 错误
-func (s *MediaService) calculateFileHash(fileBytes []byte) (string, error) {
-	hash := sha256.New()
-	if _, err := io.Copy(hash, bytes.NewReader(fileBytes)); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	detectedMimeType := mimetype.Detect(header[:n])
+	fullReader := io.MultiReader(bytes.NewReader(header[:n]), fileReader)
+	return detectedMimeType.String(), fullReader
 }
 
 // generateFileName 生成安全的文件名（使用 SHA-256）
@@ -231,17 +197,6 @@ func (s *MediaService) generateFileName(originalName string) string {
 func (s *MediaService) ensureUploadDir(dir string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建上传目录失败: %v", err)
-	}
-	return nil
-}
-
-// saveFile 保存文件到磁盘（小文件）
-// @filePath 文件路径
-// @fileBytes 文件字节流
-// @return 错误
-func (s *MediaService) saveFile(filePath string, fileBytes []byte) error {
-	if err := os.WriteFile(filePath, fileBytes, 0644); err != nil {
-		return fmt.Errorf("保存文件失败: %v", err)
 	}
 	return nil
 }
@@ -268,10 +223,10 @@ func (s *MediaService) saveFileStream(filePath string, fileData *FileData) (stri
 
 	// 根据数据来源选择处理方式
 	if fileData.Reader != nil {
-		// 流式上传（适合大文件）
+		// 流式写入
 		written, err = io.Copy(writer, fileData.Reader)
 	} else if fileData.FileBytes != nil {
-		// 字节数组上传（适合小文件或base64）
+		// 字节数组上传（小文件或base64）
 		written, err = io.Copy(writer, bytes.NewReader(fileData.FileBytes))
 	} else {
 		return "", errors.New("无效的文件数据：既没有Reader也没有FileBytes")

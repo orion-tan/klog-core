@@ -90,7 +90,7 @@ func (h *MediaHandler) extractMultipartFile(c *gin.Context) (*services.FileData,
 	if err != nil {
 		return nil, fmt.Errorf("打开文件失败: %v", err)
 	}
-	// 注意：不要在这里关闭文件，让Service层处理完后再关闭
+	// 暂时不关闭文件，Service层处理完后再关闭
 
 	// 对于大文件（>1MB），使用流式处理
 	const largeFileThreshold = 1 * 1024 * 1024

@@ -1,6 +1,6 @@
 [server]
 port = 8010
-cors = ["localhost"]
+cors = ["http://localhost:3001"]
 
 [logger]
 level = "info"
