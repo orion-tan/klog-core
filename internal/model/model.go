@@ -24,17 +24,17 @@ type User struct {
 // Post 文章表
 type Post struct {
 	ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
-	CategoryID    *uint      `gorm:"index" json:"category_id"` // 可以没有分类
+	CategoryID    *uint      `gorm:"index:idx_category_status" json:"category_id"` // 可以没有分类
 	AuthorID      uint       `gorm:"not null;index" json:"author_id"`
 	Title         string     `gorm:"type:varchar(255);not null" json:"title"`
 	Slug          string     `gorm:"type:varchar(255);uniqueIndex;not null" json:"slug"`
 	Content       string     `gorm:"type:longtext;not null" json:"content"`
 	Excerpt       string     `gorm:"type:text" json:"excerpt"`
 	CoverImageURL string     `gorm:"type:varchar(255)" json:"cover_image_url"`
-	Status        string     `gorm:"type:varchar(20);not null;default:'draft';index" json:"status"` // 'draft', 'published', 'archived'
-	ViewCount     uint64     `gorm:"not null;default:0" json:"view_count"`
-	PublishedAt   *time.Time `json:"published_at"`
-	CreatedAt     time.Time  `gorm:"not null;autoCreateTime" json:"created_at"`
+	Status        string     `gorm:"type:varchar(20);not null;default:'draft';index:idx_status_published,priority:1;index:idx_category_status,priority:2" json:"status"` // 'draft', 'published', 'archived'
+	ViewCount     uint64     `gorm:"not null;default:0;index" json:"view_count"`
+	PublishedAt   *time.Time `gorm:"index:idx_status_published,priority:2" json:"published_at"`
+	CreatedAt     time.Time  `gorm:"not null;autoCreateTime;index" json:"created_at"`
 	UpdatedAt     time.Time  `gorm:"not null;autoUpdateTime" json:"updated_at"`
 
 	// 关联关系
@@ -74,15 +74,15 @@ type PostTag struct {
 // Comment 评论表
 type Comment struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	PostID    uint      `gorm:"not null;index" json:"post_id"`
+	PostID    uint      `gorm:"not null;index:idx_post_status_created,priority:1" json:"post_id"`
 	UserID    *uint     `gorm:"index" json:"user_id"`           // 可为空（游客评论）
 	Name      string    `gorm:"type:varchar(50)" json:"name"`   // 游客评论时使用
 	Email     string    `gorm:"type:varchar(100)" json:"email"` // 游客评论时使用
 	Content   string    `gorm:"type:text;not null" json:"content"`
 	IP        string    `gorm:"type:varchar(100);not null" json:"ip"`
-	Status    string    `gorm:"type:varchar(20);not null;default:'pending';index" json:"status"` // 'pending', 'approved', 'spam'
+	Status    string    `gorm:"type:varchar(20);not null;default:'pending';index;index:idx_post_status_created,priority:2" json:"status"` // 'pending', 'approved', 'spam'
 	ParentID  *uint     `gorm:"index" json:"parent_id"`                                          // 可为空（顶级评论）
-	CreatedAt time.Time `gorm:"not null;autoCreateTime" json:"created_at"`
+	CreatedAt time.Time `gorm:"not null;autoCreateTime;index:idx_post_status_created,priority:3" json:"created_at"`
 
 	// 关联关系
 	Post    Post      `gorm:"foreignKey:PostID;constraint:OnDelete:CASCADE" json:"post,omitempty"`

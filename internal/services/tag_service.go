@@ -23,8 +23,9 @@ func NewTagService(tagRepo *repository.TagRepository, postRepo *repository.PostR
 }
 
 const (
-	tagCacheKey = "tags:all"
-	tagCacheTTL = 10 * time.Minute
+	tagCacheKey          = "tags:all"
+	tagCacheKeyWithCount = "tags:all:with_count"
+	tagCacheTTL          = 10 * time.Minute
 )
 
 // GetTags 获取所有标签（带缓存）
@@ -44,6 +45,27 @@ func (s *TagService) GetTags() ([]model.Tag, error) {
 
 	// 写入缓存
 	_ = cache.Set(tagCacheKey, tags, tagCacheTTL)
+
+	return tags, nil
+}
+
+// GetTagsWithCount 获取所有标签及其文章数量（带缓存）
+func (s *TagService) GetTagsWithCount() ([]api.TagWithCount, error) {
+	// 尝试从缓存获取
+	var tags []api.TagWithCount
+	err := cache.Get(tagCacheKeyWithCount, &tags)
+	if err == nil {
+		return tags, nil
+	}
+
+	// 缓存未命中或Redis未启用，从数据库获取
+	tags, err = s.tagRepo.GetTagsWithCount()
+	if err != nil {
+		return nil, err
+	}
+
+	// 写入缓存
+	_ = cache.Set(tagCacheKeyWithCount, tags, tagCacheTTL)
 
 	return tags, nil
 }
@@ -72,6 +94,7 @@ func (s *TagService) CreateTag(req *api.TagCreateRequest) (*model.Tag, error) {
 
 	// 清除缓存
 	_ = cache.Delete(tagCacheKey)
+	_ = cache.Delete(tagCacheKeyWithCount)
 
 	return tag, nil
 }
@@ -105,6 +128,7 @@ func (s *TagService) UpdateTag(id uint, req *api.TagUpdateRequest) (*model.Tag, 
 
 	// 清除缓存
 	_ = cache.Delete(tagCacheKey)
+	_ = cache.Delete(tagCacheKeyWithCount)
 
 	return tag, nil
 }
@@ -131,6 +155,7 @@ func (s *TagService) DeleteTag(id uint) error {
 
 	// 清除缓存
 	_ = cache.Delete(tagCacheKey)
+	_ = cache.Delete(tagCacheKeyWithCount)
 
 	return nil
 }

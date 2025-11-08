@@ -17,6 +17,7 @@ type RouterHandlers struct {
 	MediaHandler    *handler.MediaHandler
 	UserHandler     *handler.UserHandler
 	HealthHandler   *handler.HealthHandler
+	SettingHandler  *handler.SettingHandler
 }
 
 func SetupRouter(handlers *RouterHandlers) *gin.Engine {
@@ -104,6 +105,16 @@ func SetupRouter(handlers *RouterHandlers) *gin.Engine {
 		{
 			users.GET("/:id", handlers.UserHandler.GetUserByID)
 			users.PUT("/:id", middleware.JWTAuth(), handlers.UserHandler.UpdateUser)
+		}
+
+		// 设置路由（仅管理员可访问）
+		settings := apiV1.Group("/settings")
+		{
+			settings.GET("", middleware.JWTAuth(), handlers.SettingHandler.GetAllSettings)
+			settings.GET("/:key", middleware.JWTAuth(), handlers.SettingHandler.GetSettingByKey)
+			settings.PUT("", middleware.JWTAuth(), handlers.SettingHandler.UpsertSetting)
+			settings.PUT("/batch", middleware.JWTAuth(), handlers.SettingHandler.BatchUpsertSettings)
+			settings.DELETE("/:key", middleware.JWTAuth(), handlers.SettingHandler.DeleteSetting)
 		}
 	}
 

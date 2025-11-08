@@ -23,8 +23,9 @@ func NewCategoryService(categoryRepo *repository.CategoryRepository, postRepo *r
 }
 
 const (
-	categoryCacheKey = "categories:all"
-	cacheTTL         = 10 * time.Minute
+	categoryCacheKey          = "categories:all"
+	categoryCacheKeyWithCount = "categories:all:with_count"
+	cacheTTL                  = 10 * time.Minute
 )
 
 // GetCategories 获取所有分类（带缓存）
@@ -44,6 +45,27 @@ func (s *CategoryService) GetCategories() ([]model.Category, error) {
 
 	// 写入缓存
 	_ = cache.Set(categoryCacheKey, categories, cacheTTL)
+
+	return categories, nil
+}
+
+// GetCategoriesWithCount 获取所有分类及其文章数量（带缓存）
+func (s *CategoryService) GetCategoriesWithCount() ([]api.CategoryWithCount, error) {
+	// 尝试从缓存获取
+	var categories []api.CategoryWithCount
+	err := cache.Get(categoryCacheKeyWithCount, &categories)
+	if err == nil {
+		return categories, nil
+	}
+
+	// 缓存未命中或Redis未启用，从数据库获取
+	categories, err = s.categoryRepo.GetCategoriesWithCount()
+	if err != nil {
+		return nil, err
+	}
+
+	// 写入缓存
+	_ = cache.Set(categoryCacheKeyWithCount, categories, cacheTTL)
 
 	return categories, nil
 }
@@ -68,6 +90,7 @@ func (s *CategoryService) CreateCategory(req *api.CategoryCreateRequest) (*model
 
 	// 清除缓存
 	_ = cache.Delete(categoryCacheKey)
+	_ = cache.Delete(categoryCacheKeyWithCount)
 
 	return category, nil
 }
@@ -104,6 +127,7 @@ func (s *CategoryService) UpdateCategory(id uint, req *api.CategoryUpdateRequest
 
 	// 清除缓存
 	_ = cache.Delete(categoryCacheKey)
+	_ = cache.Delete(categoryCacheKeyWithCount)
 
 	return category, nil
 }
@@ -130,6 +154,7 @@ func (s *CategoryService) DeleteCategory(id uint) error {
 
 	// 清除缓存
 	_ = cache.Delete(categoryCacheKey)
+	_ = cache.Delete(categoryCacheKeyWithCount)
 
 	return nil
 }

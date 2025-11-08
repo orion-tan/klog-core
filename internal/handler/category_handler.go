@@ -37,13 +37,26 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 
 // GetCategories 获取所有分类
 func (h *CategoryHandler) GetCategories(c *gin.Context) {
-	categories, err := h.categoryService.GetCategories()
-	if err != nil {
-		utils.ResponseError(c, http.StatusInternalServerError, "GET_CATEGORIES_FAILED", err.Error())
-		return
-	}
+	// 检查是否需要返回文章数量
+	withCount := c.Query("with_count")
 
-	utils.ResponseSuccess(c, http.StatusOK, categories)
+	if withCount == "true" || withCount == "1" {
+		// 返回带文章数量的分类列表
+		categories, err := h.categoryService.GetCategoriesWithCount()
+		if err != nil {
+			utils.ResponseError(c, http.StatusInternalServerError, "GET_CATEGORIES_FAILED", err.Error())
+			return
+		}
+		utils.ResponseSuccess(c, http.StatusOK, categories)
+	} else {
+		// 返回普通分类列表
+		categories, err := h.categoryService.GetCategories()
+		if err != nil {
+			utils.ResponseError(c, http.StatusInternalServerError, "GET_CATEGORIES_FAILED", err.Error())
+			return
+		}
+		utils.ResponseSuccess(c, http.StatusOK, categories)
+	}
 }
 
 // UpdateCategory 更新分类

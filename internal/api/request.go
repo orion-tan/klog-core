@@ -87,3 +87,15 @@ type CommentCreateRequest struct {
 type CommentUpdateRequest struct {
 	Status string `json:"status" binding:"required,oneof=pending approved spam"`
 }
+
+// SettingUpsertRequest 创建/更新设置请求
+type SettingUpsertRequest struct {
+	Key   string `json:"key" binding:"required"`
+	Value string `json:"value" binding:"required"`
+	Type  string `json:"type" binding:"required,oneof=str number json"`
+}
+
+// SettingBatchUpsertRequest 批量创建/更新设置请求
+type SettingBatchUpsertRequest struct {
+	Settings []SettingUpsertRequest `json:"settings" binding:"required,min=1"`
+}

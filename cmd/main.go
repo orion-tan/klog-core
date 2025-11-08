@@ -40,15 +40,18 @@ func main() {
 		defer cache.CloseRedis()
 	}
 
-	// 启动评论限流清理协程
-	go middleware.CleanupCommentLimiter()
-
-	// 初始化文件删除队列
-	fileQueue := queue.NewFileQueue()
-
 	// 创建用于管理后台任务的context
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	defer bgCancel()
+
+	// 启动评论限流清理协程
+	go middleware.CleanupCommentLimiter(bgCtx)
+
+	// 启动全局限流器清理协程（每10分钟清理一次）
+	go middleware.CleanupIPRateLimiter(middleware.GlobalIPRateLimiter, 10*time.Minute, bgCtx)
+
+	// 初始化文件删除队列
+	fileQueue := queue.NewFileQueue()
 
 	// 启动文件删除队列消费者
 	fileQueue.StartConsumer(bgCtx)
@@ -74,6 +77,7 @@ func main() {
 	commentRepo := repository.NewCommentRepository(db)
 	mediaRepo := repository.NewMediaRepository(db)
 	userRepo := repository.NewUserRepository(db)
+	settingRepo := repository.NewSettingRepository(db)
 
 	// 初始化服务层
 	authService := services.NewAuthService(authRepo)
@@ -83,6 +87,7 @@ func main() {
 	commentService := services.NewCommentService(commentRepo, postRepo)
 	mediaService := services.NewMediaService(mediaRepo, fileQueue)
 	userService := services.NewUserService(userRepo)
+	settingService := services.NewSettingService(settingRepo)
 
 	// 初始化处理器层
 	authHandler := handler.NewAuthHandler(authService)
@@ -93,6 +98,7 @@ func main() {
 	mediaHandler := handler.NewMediaHandler(mediaService)
 	userHandler := handler.NewUserHandler(userService)
 	healthHandler := handler.NewHealthHandler(db)
+	settingHandler := handler.NewSettingHandler(settingService)
 
 	// 设置路由
 	handlers := &router.RouterHandlers{
@@ -104,6 +110,7 @@ func main() {
 		MediaHandler:    mediaHandler,
 		UserHandler:     userHandler,
 		HealthHandler:   healthHandler,
+		SettingHandler:  settingHandler,
 	}
 
 	r := router.SetupRouter(handlers)

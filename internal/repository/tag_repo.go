@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"klog-backend/internal/api"
 	"klog-backend/internal/model"
 
 	"gorm.io/gorm"
@@ -62,6 +63,23 @@ func (r *TagRepository) GetTagByName(name string) (*model.Tag, error) {
 func (r *TagRepository) GetTags() ([]model.Tag, error) {
 	var tags []model.Tag
 	err := r.DB.Find(&tags).Error
+	if err != nil {
+		return nil, err
+	}
+	return tags, nil
+}
+
+// GetTagsWithCount 获取所有标签及其文章数量
+// @return 标签列表（含文章数量）, 错误
+func (r *TagRepository) GetTagsWithCount() ([]api.TagWithCount, error) {
+	var tags []api.TagWithCount
+	err := r.DB.Table("tags").
+		Select("tags.id, tags.name, tags.slug, COUNT(DISTINCT post_tags.post_id) as post_count").
+		Joins("LEFT JOIN post_tags ON tags.id = post_tags.tag_id").
+		Joins("LEFT JOIN posts ON post_tags.post_id = posts.id AND posts.status = ?", "published").
+		Group("tags.id").
+		Order("tags.id ASC").
+		Find(&tags).Error
 	if err != nil {
 		return nil, err
 	}

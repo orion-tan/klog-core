@@ -66,6 +66,15 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 		return
 	}
 
+	// 验证Markdown内容安全性
+	if !utils.ValidateMarkdownContent(req.Content) {
+		utils.ResponseError(c, http.StatusBadRequest, "INVALID_CONTENT", "评论内容包含不安全的标签或脚本")
+		return
+	}
+
+	// 清理评论内容（移除危险元素）
+	req.Content = utils.SanitizeMarkdownContent(req.Content)
+
 	// 获取IP地址
 	ip := c.ClientIP()
 

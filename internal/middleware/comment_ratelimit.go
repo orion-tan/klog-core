@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"klog-backend/internal/utils"
 	"net/http"
 	"sync"
@@ -83,19 +84,31 @@ func CommentRateLimitMiddleware() gin.HandlerFunc {
 }
 
 // CleanupCommentLimiter 定期清理过期的访客记录
-func CleanupCommentLimiter() {
+// @ctx 上下文，用于优雅退出
+func CleanupCommentLimiter(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		now := time.Now()
-		commentLimiter.mu.Lock()
-		for ip, visitor := range commentLimiter.visitors {
-			// 清理2小时前的记录
-			if now.Sub(visitor.lastCommentTime) > 2*time.Hour {
-				delete(commentLimiter.visitors, ip)
+	utils.SugarLogger.Info("评论限流器清理协程已启动，清理间隔: 10分钟")
+
+	for {
+		select {
+		case <-ctx.Done():
+			utils.SugarLogger.Info("评论限流器清理协程停止")
+			return
+		case <-ticker.C:
+			now := time.Now()
+			commentLimiter.mu.Lock()
+			cleanedCount := 0
+			for ip, visitor := range commentLimiter.visitors {
+				// 清理2小时前的记录
+				if now.Sub(visitor.lastCommentTime) > 2*time.Hour {
+					delete(commentLimiter.visitors, ip)
+					cleanedCount++
+				}
 			}
+			commentLimiter.mu.Unlock()
+			utils.SugarLogger.Infof("清理评论限流器中的过期记录，清理数量: %d", cleanedCount)
 		}
-		commentLimiter.mu.Unlock()
 	}
 }

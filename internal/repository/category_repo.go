@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"klog-backend/internal/api"
 	"klog-backend/internal/model"
 
 	"gorm.io/gorm"
@@ -50,6 +51,22 @@ func (r *CategoryRepository) GetCategoryBySlug(slug string) (*model.Category, er
 func (r *CategoryRepository) GetCategories() ([]model.Category, error) {
 	var categories []model.Category
 	err := r.DB.Find(&categories).Error
+	if err != nil {
+		return nil, err
+	}
+	return categories, nil
+}
+
+// GetCategoriesWithCount 获取所有分类及其文章数量
+// @return 分类列表（含文章数量）, 错误
+func (r *CategoryRepository) GetCategoriesWithCount() ([]api.CategoryWithCount, error) {
+	var categories []api.CategoryWithCount
+	err := r.DB.Table("categories").
+		Select("categories.id, categories.name, categories.slug, categories.description, COUNT(posts.id) as post_count").
+		Joins("LEFT JOIN posts ON categories.id = posts.category_id AND posts.status = ?", "published").
+		Group("categories.id").
+		Order("categories.id ASC").
+		Find(&categories).Error
 	if err != nil {
 		return nil, err
 	}

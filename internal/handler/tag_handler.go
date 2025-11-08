@@ -37,13 +37,26 @@ func (h *TagHandler) CreateTag(c *gin.Context) {
 
 // GetTags 获取所有标签
 func (h *TagHandler) GetTags(c *gin.Context) {
-	tags, err := h.tagService.GetTags()
-	if err != nil {
-		utils.ResponseError(c, http.StatusInternalServerError, "GET_TAGS_FAILED", err.Error())
-		return
-	}
+	// 检查是否需要返回文章数量
+	withCount := c.Query("with_count")
 
-	utils.ResponseSuccess(c, http.StatusOK, tags)
+	if withCount == "true" || withCount == "1" {
+		// 返回带文章数量的标签列表
+		tags, err := h.tagService.GetTagsWithCount()
+		if err != nil {
+			utils.ResponseError(c, http.StatusInternalServerError, "GET_TAGS_FAILED", err.Error())
+			return
+		}
+		utils.ResponseSuccess(c, http.StatusOK, tags)
+	} else {
+		// 返回普通标签列表
+		tags, err := h.tagService.GetTags()
+		if err != nil {
+			utils.ResponseError(c, http.StatusInternalServerError, "GET_TAGS_FAILED", err.Error())
+			return
+		}
+		utils.ResponseSuccess(c, http.StatusOK, tags)
+	}
 }
 
 // UpdateTag 更新标签

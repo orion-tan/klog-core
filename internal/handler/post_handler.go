@@ -65,10 +65,9 @@ func (h *PostHandler) GetPostByID(c *gin.Context) {
 	utils.ResponseSuccess(c, http.StatusOK, post)
 }
 
-// GetPosts 获取文章列表
+// GetPosts 获取文章列表（支持游标分页和传统分页）
 func (h *PostHandler) GetPosts(c *gin.Context) {
-	// 解析查询参数
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	// 解析通用查询参数
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	status := c.Query("status")
 	categorySlug := c.Query("category")
@@ -77,11 +76,61 @@ func (h *PostHandler) GetPosts(c *gin.Context) {
 	order := c.DefaultQuery("order", "desc")
 	detail, _ := strconv.Atoi(c.DefaultQuery("detail", "0"))
 
+	// 限制每页最大数量
+	if limit > 100 {
+		limit = 100
+	}
+	if limit < 1 {
+		limit = 10
+	}
+
 	// 检查权限
 	_, exists := c.Get("claims")
 	if !exists {
 		// 未认证用户只能看到已发布的文章
 		status = "published"
+	}
+
+	// 判断使用哪种分页模式
+	cursor := c.Query("cursor")
+	if cursor != "" || c.Query("page") == "" {
+		// 使用游标分页
+		h.getPostsByCursor(c, cursor, limit, status, categorySlug, tagSlug, sortBy, order, detail)
+	} else {
+		// 使用offset分页
+		h.getPostsByOffset(c, limit, status, categorySlug, tagSlug, sortBy, order, detail)
+	}
+}
+
+// getPostsByCursor 游标分页获取文章列表
+func (h *PostHandler) getPostsByCursor(c *gin.Context, cursor string, limit int, status, categorySlug, tagSlug, sortBy, order string, detail int) {
+	posts, nextCursor, hasMore, err := h.postService.GetPostsByCursor(cursor, limit, status, categorySlug, tagSlug, sortBy, order)
+	if err != nil {
+		utils.ResponseError(c, http.StatusBadRequest, "GET_POSTS_FAILED", err.Error())
+		return
+	}
+
+	// 如果不需要详情，清除content字段
+	if detail == 0 {
+		for i := range posts {
+			posts[i].Content = ""
+		}
+	}
+
+	utils.ResponseSuccess(c, http.StatusOK, api.CursorPaginatedResponse{
+		Data:       posts,
+		NextCursor: nextCursor,
+		PrevCursor: nil, // 暂不支持反向游标
+		HasMore:    hasMore,
+		Limit:      limit,
+	})
+}
+
+// getPostsByOffset 传统offset分页获取文章列表
+func (h *PostHandler) getPostsByOffset(c *gin.Context, limit int, status, categorySlug, tagSlug, sortBy, order string, detail int) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
 	}
 
 	posts, total, err := h.postService.GetPosts(page, limit, status, categorySlug, tagSlug, sortBy, order)
@@ -90,6 +139,7 @@ func (h *PostHandler) GetPosts(c *gin.Context) {
 		return
 	}
 
+	// 如果不需要详情，清除content字段
 	if detail == 0 {
 		for i := range posts {
 			posts[i].Content = ""

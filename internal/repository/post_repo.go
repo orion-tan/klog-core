@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"fmt"
 	"klog-backend/internal/model"
+	"klog-backend/internal/utils"
 
 	"gorm.io/gorm"
 )
@@ -57,7 +59,12 @@ func (r *PostRepository) GetPostByID(postID uint, preload bool) (*model.Post, er
 	var post model.Post
 	query := r.DB
 	if preload {
-		query = query.Preload("Category").Preload("Author").Preload("Tags").Preload("Comments")
+		// 并发预加载关联数据，评论只加载已审核的
+		query = query.
+			Preload("Category").
+			Preload("Author").
+			Preload("Tags").
+			Preload("Comments", "status = ?", "approved")
 	}
 	err := query.First(&post, postID).Error
 	if err != nil {
@@ -203,4 +210,109 @@ func (r *PostRepository) AssociateTags(post *model.Post, tags []model.Tag) error
 // @return 错误
 func (r *PostRepository) AssociateTagsInTx(tx *gorm.DB, post *model.Post, tags []model.Tag) error {
 	return tx.Model(post).Association("Tags").Replace(tags)
+}
+
+// GetPostsByCursor 使用游标分页获取文章列表
+// @cursor 游标数据（nil表示首页）
+// @limit 每页数量
+// @status 文章状态
+// @categorySlug 分类Slug
+// @tagSlug 标签Slug
+// @sortBy 排序字段
+// @order 排序方式
+// @return 文章列表, 是否有更多数据, 错误
+func (r *PostRepository) GetPostsByCursor(cursor *utils.CursorData, limit int, status, categorySlug, tagSlug, sortBy, order string) ([]model.Post, bool, error) {
+	var posts []model.Post
+
+	query := r.DB.Model(&model.Post{})
+
+	// 筛选条件
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if categorySlug != "" {
+		query = query.Joins("JOIN categories ON categories.id = posts.category_id").
+			Where("categories.slug = ?", categorySlug)
+	}
+	if tagSlug != "" {
+		query = query.Joins("JOIN post_tags ON post_tags.post_id = posts.id").
+			Joins("JOIN tags ON tags.id = post_tags.tag_id").
+			Where("tags.slug = ?", tagSlug).
+			Distinct()
+	}
+
+	// 排序字段验证（白名单）
+	allowedSortFields := map[string]string{
+		"published_at": "published_at",
+		"created_at":   "created_at",
+		"updated_at":   "updated_at",
+		"view_count":   "view_count",
+		"title":        "title",
+	}
+	sortField, ok := allowedSortFields[sortBy]
+	if !ok {
+		sortField = "published_at"
+		sortBy = "published_at" // 同步更新sortBy以便后续使用
+	}
+
+	// 排序方向验证
+	allowedOrders := map[string]string{
+		"asc":  "ASC",
+		"desc": "DESC",
+	}
+	sortOrder, ok := allowedOrders[order]
+	if !ok {
+		sortOrder = "DESC"
+		order = "desc"
+	}
+
+	// 应用游标条件（基于排序字段和ID的组合条件）
+	if cursor != nil {
+		// 验证游标的排序字段是否匹配当前请求
+		if cursor.SortField != sortBy {
+			return nil, false, fmt.Errorf("游标排序字段不匹配")
+		}
+
+		// 解析游标值
+		cursorValue, err := utils.ParseSortValue(cursor.SortField, cursor.SortValue)
+		if err != nil {
+			return nil, false, fmt.Errorf("解析游标值失败: %w", err)
+		}
+
+		// 构建WHERE条件：
+		// 降序：(sortField < cursorValue) OR (sortField = cursorValue AND id < cursorID)
+		// 升序：(sortField > cursorValue) OR (sortField = cursorValue AND id > cursorID)
+		if order == "desc" {
+			query = query.Where(
+				"(posts."+sortField+" < ?) OR (posts."+sortField+" = ? AND posts.id < ?)",
+				cursorValue, cursorValue, cursor.ID,
+			)
+		} else {
+			query = query.Where(
+				"(posts."+sortField+" > ?) OR (posts."+sortField+" = ? AND posts.id > ?)",
+				cursorValue, cursorValue, cursor.ID,
+			)
+		}
+	}
+
+	// 排序（始终添加ID作为次要排序以保证稳定性）
+	query = query.Order(fmt.Sprintf("posts.%s %s, posts.id %s", sortField, sortOrder, sortOrder))
+
+	// 多取一条以判断是否有下一页
+	query = query.Limit(limit + 1)
+
+	// 预加载关联
+	query = query.Preload("Category").Preload("Author").Preload("Tags")
+
+	if err := query.Find(&posts).Error; err != nil {
+		return nil, false, err
+	}
+
+	// 判断是否有更多数据
+	hasMore := len(posts) > limit
+	if hasMore {
+		posts = posts[:limit] // 去掉多取的一条
+	}
+
+	return posts, hasMore, nil
 }
